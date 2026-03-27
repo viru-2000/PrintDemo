@@ -1,117 +1,200 @@
 
-// const axios = require("axios");
-// const readline = require("readline");
-// const { print } = require("pdf-to-printer");
-
-// const API_BASE = "http://localhost:5000/api";
-
-// const rl = readline.createInterface({
-//   input: process.stdin,
-//   output: process.stdout,
-// });
-
-// function ask(question) {
-//   return new Promise((resolve) => rl.question(question, resolve));
-// }
-
-// const MAX_ATTEMPTS = 3;
-
-// (async () => {
-//   let attempts = 0;
-
-//   while (attempts < MAX_ATTEMPTS) {
-//     try {
-//       /* ===============================
-//          1️⃣ TAKE OTP FROM CUSTOMER
-//       =============================== */
-//       const otp = await ask("Enter OTP: ");
-
-//       if (!otp || otp.length !== 6 || isNaN(otp)) {
-//         console.log("OTP must be exactly 6 digits.\n");
-//         attempts++;
-//         continue;
-//       }
-
-//       /* ===============================
-//          2️⃣ VERIFY OTP (UNLOCK JOB)
-//       =============================== */
-//       const verifyRes = await axios.post(`${API_BASE}/verify-otp`, { otp });
-//       const jobId = verifyRes.data.jobId;
-
-//       console.log("OTP verified. Job unlocked.");
-
-//       /* ===============================
-//          3️⃣ FETCH JOB DETAILS (BY JOB ID)
-//       =============================== */
-//      const jobRes = await axios.get(`${API_BASE}/kiosk/job-by-otp/${otp}`);
-//     const job = jobRes.data;
-
-//     console.log("Job details received:");
-//     console.log(job);
-
-//       /* ===============================
-//          4️⃣ PRINT DOCUMENT (REAL PRINT)
-//       =============================== */
-//       console.log("Printing file:", job.file_path);
-
-//       await print(job.file_path, {
-//         copies: job.copies,
-//         monochrome: job.color === "bw",
-//         paperSize: job.paper_size,
-//       });
-
-//       console.log("Printing completed.");
-
-//       /* ===============================
-//          5️⃣ MARK JOB AS PRINTED
-//       =============================== */
-//       await axios.post(`${API_BASE}/kiosk/mark-printed`, { jobId });
-
-//       console.log("Print completed. Thank you.");
-//       rl.close();
-//       return;
-
-//     } catch (err) {
-//       attempts++;
-
-//       const msg =
-//         err.response?.data?.error ||
-//         err.message ||
-//         "Invalid OTP";
-
-//       console.log(`Error: ${msg}`);
-//       console.log(`Attempts left: ${MAX_ATTEMPTS - attempts}\n`);
-
-//       if (attempts >= MAX_ATTEMPTS) {
-//         console.log(
-//           "Maximum attempts reached. Please contact support."
-//         );
-//         rl.close();
-//         return;
-//       }
-//     }
-//   }
-// })();
-
-/**
- * ==========================================
- * PRINT KIOSK CLIENT
- * ==========================================
- * - Accepts OTP or QR input
- * - Unlocks print job
- * - Prints PDF
- * - Marks job as printed
- */
-
 const axios = require("axios");
 const readline = require("readline");
 const { print } = require("pdf-to-printer");
+const crypto = require("crypto");
+const os = require("os");
+const fs = require("fs");
 
 /* ===============================
    CONFIG
 =============================== */
 const API_BASE = "http://localhost:5000/api";
+const CONFIG_FILE = "./config.json";
+
 const MAX_ATTEMPTS = 3;
+
+function getDeviceId() {
+  const interfaces = os.networkInterfaces();
+
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (!iface.internal && iface.mac !== "00:00:00:00:00:00") {
+        return iface.mac;
+      }
+    }
+  }
+
+  return os.hostname(); // fallback
+}
+
+/* ===============================
+   LOAD / REGISTER MACHINE
+=============================== */
+let MACHINE_ID = null;
+let API_KEY = null;
+
+// async function registerMachine() {
+//   console.log("Registering machine...");
+
+//   const deviceSerial = os.hostname(); // or MAC / CPU ID
+
+//   const res = await axios.post(`${API_BASE}/register-machine`, {
+//     deviceSerial,
+//   });
+//   const data= res.data;
+ 
+//   if (data.API_KEY) {
+//     fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2));
+//     console.log("Machine registered successfully.");
+//     return data;
+//   }
+
+  
+//   if (!data.API_KEY && data.MACHINE_ID) {
+//     console.log("Machine already registered. Fetching existing config...");
+
+    
+//     const existingConfig = loadConfig();
+
+//     if (!existingConfig) {
+//       throw new Error(
+//         "Machine already registered but config missing. Cannot recover API key."
+//       );
+//     }
+
+//     return existingConfig;
+//   }
+//   fs.writeFileSync(CONFIG_FILE, JSON.stringify(res.data, null, 2));
+
+//   console.log("Machine registered successfully.");
+//   return res.data;
+// }
+
+// function loadConfig() {
+//   if (!fs.existsSync(CONFIG_FILE)) {
+//     return null;
+//   }
+//   return JSON.parse(fs.readFileSync(CONFIG_FILE));
+// }
+
+async function registerMachine() {
+  console.log("Registering machine...");
+
+  const deviceSerial = getDeviceId();
+
+  try {
+    const res = await axios.post(`${API_BASE}/register-machine`, {
+      deviceSerial,
+    });
+
+    const data = res.data;
+
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2));
+
+    console.log("Machine registered successfully.");
+    return data;
+
+  } catch (err) {
+    if (err.response?.status === 403) {
+      console.log("❌ Machine already registered. Contact admin.");
+      process.exit(1);
+    }
+
+    console.log("Registration failed:", err.message);
+    throw err;
+  }
+}
+
+  function loadConfig() {
+  try {
+    if (!fs.existsSync(CONFIG_FILE)) {
+      return null;
+    }
+
+    const data = fs.readFileSync(CONFIG_FILE, "utf-8").trim();
+
+    
+    if (!data) {
+      console.log("Config file empty. Re-registering...");
+      return null;
+    }
+
+    return JSON.parse(data);
+
+  } catch (err) {
+    console.log("Invalid config. Re-registering...");
+    
+    
+    try {
+      fs.unlinkSync(CONFIG_FILE);
+    } catch (e) {}
+
+    return null;
+  }
+}
+async function initMachine() {
+  let config = loadConfig();
+
+  if (!config) {
+    config = await registerMachine();
+  }
+  if (!config.API_KEY || !config.MACHINE_ID) {
+    console.log("Invalid config. Re-registering...");
+    fs.unlinkSync(CONFIG_FILE);
+    config = await registerMachine();
+  }
+  MACHINE_ID = config.MACHINE_ID;
+  API_KEY = config.API_KEY;
+
+  console.log("Machine Ready:", MACHINE_ID);
+}
+/* ===============================
+   SIGN REQUEST
+=============================== */
+function signRequest(body) {
+  const timestamp = Date.now().toString();
+  const bodyString = JSON.stringify(body || {});
+
+  const signature = crypto
+    .createHmac("sha256", API_KEY)
+    .update(MACHINE_ID + timestamp + bodyString)
+    .digest("hex");
+
+  return { timestamp, signature };
+}
+
+/* ---------------- HEARTBEAT ---------------- */
+function startHeartbeat() {
+  setInterval(async () => {
+    try {
+      const cpuUsage = os.loadavg()[0];
+
+      const body = {
+        cpu_usage: cpuUsage,
+        paper_level: 80,
+        ink_level: 60,
+        status: "ONLINE"
+      };
+
+      const auth = signRequest(body);
+      await axios.post(`${API_BASE}/kiosk/heartbeat`, body, {
+        headers: {
+          "X-Machine-Id": MACHINE_ID,
+          "X-Api-Key": API_KEY, 
+          "X-Timestamp": auth.timestamp,
+          "X-Signature": auth.signature,
+        },
+      });
+       console.log("Heartbeat sent");
+
+    } catch (err) {
+      console.log("Heartbeat failed");
+    }
+  }, 60000);
+}
+
+
 
 /* ===============================
    CLI SETUP
@@ -129,7 +212,7 @@ function ask(question) {
    HELPERS
 =============================== */
 function isOtp(input) {
-  return /^\d{6}$/.test(input);
+  return /^\d{4}$/.test(input);
 }
 
 function isQrToken(input) {
@@ -161,12 +244,21 @@ function parseInput(input) {
    MAIN FLOW
 =============================== */
 (async () => {
+  try {
+    await initMachine();
+  } catch (err) {
+    console.error("Failed to initialize machine:", err.message);
+    process.exit(1); // Stop if we can't load the key
+  }
+  startHeartbeat();
+  while(true) {
+  
   let attempts = 0;
 
   while (attempts < MAX_ATTEMPTS) {
     try {
       const input = await ask(
-        "Enter OTP or Scan QR (PRINTJOB:XXXXXX): "
+        "Enter OTP or Scan QR : "
       );
 
       const payload = parseInput(input);
@@ -177,12 +269,21 @@ function parseInput(input) {
         continue;
       }
 
+      const auth = signRequest(payload);
       /* ===============================
          UNLOCK JOB
       =============================== */
-      const unlockRes = await axios.post(
+       const unlockRes = await axios.post(
         `${API_BASE}/kiosk/unlock`,
-        payload
+        payload,
+        {
+          headers: {
+            "X-Machine-Id": MACHINE_ID,
+            "X-Api-Key": API_KEY, 
+            "X-Timestamp": auth.timestamp,
+            "X-Signature": auth.signature,
+          },
+        }
       );
 
       const job = unlockRes.data;
@@ -195,22 +296,55 @@ function parseInput(input) {
       =============================== */
       console.log("Printing:", job.filePath);
 
-      await print(job.filePath, {
-        copies: job.copies,
-        monochrome: job.color === "bw",
-        paperSize: job.paperSize,
-      });
+      try {
+
+          await print(job.filePath, {
+            copies: job.copies,
+            monochrome: job.color === "bw",
+            paperSize: job.paperSize,
+          });
+
+        } catch (printErr) {
+
+          console.log("Printer error:", printErr.message);
+
+          
+          const failBody = { jobId: job.jobId };
+          const failAuth = signRequest(failBody);
+
+          await axios.post(
+            `${API_BASE}/kiosk/mark-failed`,
+            failBody,
+            {
+              headers: {
+                "X-Machine-Id": MACHINE_ID,
+                "X-Api-Key": API_KEY, 
+                "X-Timestamp": failAuth.timestamp,
+                "X-Signature": failAuth.signature,
+              },
+            }
+          );
+
+          console.log("Job marked as FAILED.\n");
+          break;
+        }
+      const markBody = { jobId: job.jobId };
+      const markAuth = signRequest(markBody);
 
       /* ===============================
          MARK PRINTED
       =============================== */
-      await axios.post(`${API_BASE}/kiosk/mark-printed`, {
-        jobId: job.jobId,
+      await axios.post(`${API_BASE}/kiosk/mark-printed`,markBody, {
+        headers: {
+            "X-Machine-Id": MACHINE_ID,
+            "X-Api-Key": API_KEY, 
+            "X-Timestamp": markAuth.timestamp,
+            "X-Signature": markAuth.signature,
+          },
       });
 
       console.log("Print completed successfully.");
-      rl.close();
-      return;
+      break;
 
     } catch (err) {
       attempts++;
@@ -225,9 +359,8 @@ function parseInput(input) {
 
       if (attempts >= MAX_ATTEMPTS) {
         console.log("Maximum attempts reached.");
-        rl.close();
-        return;
       }
     }
   }
+}
 })();

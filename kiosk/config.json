@@ -1,0 +1,5 @@
+{
+  "MACHINE_ID": "MH1000",
+  "API_KEY": "eeaf44fb437f6b39bd3b46ec27950c22569f626eab67a15ddf9e9f2a4dcd21d0",
+  "API_BASE": "http://localhost:5000/api"
+}
