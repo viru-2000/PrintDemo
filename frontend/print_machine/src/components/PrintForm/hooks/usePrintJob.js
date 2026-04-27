@@ -1,5 +1,7 @@
+
+
 // // hooks/usePrintJob.js
-// import { useState, useEffect, useCallback ,useMemo} from "react";
+// import { useState, useEffect, useCallback, useMemo } from "react";
 // import { API_BASE } from "../constants";
 
 // export function usePrintJob({ machineId, machineStatus, onJobComplete }) {
@@ -23,13 +25,21 @@
 //   const [jobError, setJobError] = useState("");
 //   const [jobSuccess, setJobSuccess] = useState("");
 
-//   const resetJob = () => {
-//   setJobId(null);
-//   setSummary(null);
-//   setFile(null);
-//   setJobError("");
-//   setJobSuccess("");
-// };
+//   /* -----------------------------------------------
+//      RESET JOB — resets everything including options
+//   ----------------------------------------------- */
+//   const resetJob = useCallback(() => {
+//     setJobId(null);
+//     setSummary(null);
+//     setFile(null);
+//     setJobError("");
+//     setJobSuccess("");
+//     // ✅ FIX 2: reset print options back to defaults on back
+//     setColor("bw");
+//     setCopies(1);
+//     setPrintSide("single");
+//     setPaperSize("A4");
+//   }, []);
 
 //   /* -----------------------------------------------
 //      FILE VALIDATION
@@ -55,18 +65,23 @@
 //   };
 
 //   /* -----------------------------------------------
-//      FETCH SUMMARY
+//      ✅ FIX 1: INSTANT LOCAL PRICE CALCULATION
+//      Mirrors calculatePrice() from your backend exactly.
+//      Updates immediately on every copies/color/printSide change
+//      — no network call needed for UI update.
 //   ----------------------------------------------- */
 //   const localSummary = useMemo(() => {
 //     if (!summary) return null;
 
 //     const pages = summary.pages || summary.totalPages || 0;
+
 //     let rate;
 //     if (color === "bw") {
 //       rate = printSide === "duplex" ? 4 : 2;
 //     } else {
 //       rate = printSide === "duplex" ? 10 : 5;
 //     }
+
 //     const units =
 //       printSide === "duplex"
 //         ? Math.ceil(pages / 2) * copies
@@ -81,6 +96,9 @@
 //     };
 //   }, [summary, color, copies, printSide]);
 
+//   /* -----------------------------------------------
+//      FETCH SUMMARY (only called once after upload)
+//   ----------------------------------------------- */
 //   const fetchSummary = useCallback(async (id) => {
 //     try {
 //       const res = await fetch(`${API_BASE}/job-summary/${id}`);
@@ -92,7 +110,9 @@
 //   }, []);
 
 //   /* -----------------------------------------------
-//      UPDATE JOB OPTIONS (debounced via useEffect)
+//      UPDATE JOB ON BACKEND
+//      ✅ FIX 3: debounced 600ms so backend stays in sync
+//      but UI is already instant via localSummary above.
 //   ----------------------------------------------- */
 //   const updateJob = useCallback(async () => {
 //     if (!jobId) return;
@@ -103,13 +123,14 @@
 //     });
 //     const data = await res.json();
 //     if (!res.ok) throw new Error(data.error || "Failed to update job.");
-//     await fetchSummary(jobId);
-//   }, [jobId, color, copies, paperSize, printSide, fetchSummary]);
+//   }, [jobId, color, copies, paperSize, printSide]);
 
 //   useEffect(() => {
-//     if (jobId && !otp) {
+//     if (!jobId || otp) return;
+//     const timer = setTimeout(() => {
 //       updateJob().catch(() => {});
-//     }
+//     }, 600);
+//     return () => clearTimeout(timer);
 //   }, [jobId, otp, updateJob]);
 
 //   /* -----------------------------------------------
@@ -148,7 +169,7 @@
 
 //       setJobId(data.jobId);
 //       await fetchSummary(data.jobId);
-//       setJobSuccess(`Job created successfully.`);
+//       setJobSuccess("Job created successfully.");
 //     } catch (err) {
 //       setJobError(err.message || "Upload failed. Please try again.");
 //     } finally {
@@ -188,7 +209,8 @@
 //               body: JSON.stringify(response),
 //             });
 //             const verifyData = await verifyRes.json();
-//             if (!verifyRes.ok) throw new Error(verifyData.error || "Payment verification failed.");
+//             if (!verifyRes.ok)
+//               throw new Error(verifyData.error || "Payment verification failed.");
 
 //             setOtp(verifyData.otp);
 //             setQrToken(verifyData.qrToken);
@@ -228,8 +250,9 @@
 //           clearInterval(interval);
 //           onJobComplete?.("success");
 //           setTimeout(() => {
-//             // window.location.href = `/?machine=${machineId}`;
-//             window.location.replace(`${window.location.origin}/?machine=${machineId}`);
+//             window.location.replace(
+//               `${window.location.origin}/?machine=${machineId}`
+//             );
 //           }, 3000);
 //         }
 
@@ -255,13 +278,14 @@
 
 //     // Job
 //     jobId,
-//     summary,
+//     summary: localSummary,   // ✅ instant local price, not stale server value
 //     otp,
 //     qrToken,
 
 //     // Actions
 //     handleUploadJob,
 //     startPayment,
+//     resetJob,
 
 //     // UI
 //     uploading,
@@ -269,8 +293,6 @@
 //     fileError,
 //     jobError,
 //     jobSuccess,
-
-//     resetJob,
 //     clearJobError: () => setJobError(""),
 //     clearJobSuccess: () => setJobSuccess(""),
 //   };
@@ -310,7 +332,6 @@ export function usePrintJob({ machineId, machineStatus, onJobComplete }) {
     setFile(null);
     setJobError("");
     setJobSuccess("");
-    // ✅ FIX 2: reset print options back to defaults on back
     setColor("bw");
     setCopies(1);
     setPrintSide("single");
@@ -341,10 +362,9 @@ export function usePrintJob({ machineId, machineStatus, onJobComplete }) {
   };
 
   /* -----------------------------------------------
-     ✅ FIX 1: INSTANT LOCAL PRICE CALCULATION
-     Mirrors calculatePrice() from your backend exactly.
-     Updates immediately on every copies/color/printSide change
-     — no network call needed for UI update.
+     INSTANT LOCAL PRICE CALCULATION
+     Mirrors calculatePrice() from backend exactly.
+     Updates immediately on every copies/color/printSide change.
   ----------------------------------------------- */
   const localSummary = useMemo(() => {
     if (!summary) return null;
@@ -387,7 +407,7 @@ export function usePrintJob({ machineId, machineStatus, onJobComplete }) {
 
   /* -----------------------------------------------
      UPDATE JOB ON BACKEND
-     ✅ FIX 3: debounced 600ms so backend stays in sync
+     Debounced 600ms so backend stays in sync
      but UI is already instant via localSummary above.
   ----------------------------------------------- */
   const updateJob = useCallback(async () => {
@@ -526,9 +546,8 @@ export function usePrintJob({ machineId, machineStatus, onJobComplete }) {
           clearInterval(interval);
           onJobComplete?.("success");
           setTimeout(() => {
-            window.location.replace(
-              `${window.location.origin}/?machine=${machineId}`
-            );
+            // sessionStorage still has machineId — clean URL redirect
+            window.location.replace(window.location.origin);
           }, 3000);
         }
 
@@ -554,7 +573,7 @@ export function usePrintJob({ machineId, machineStatus, onJobComplete }) {
 
     // Job
     jobId,
-    summary: localSummary,   // ✅ instant local price, not stale server value
+    summary: localSummary,
     otp,
     qrToken,
 

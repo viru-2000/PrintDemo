@@ -25,10 +25,15 @@ const razorpay = new Razorpay({
 });
 
 /* ---------------- MIDDLEWARE ---------------- */
+// app.use(cors({
+//   origin: process.env.FRONTEND_URL || 'http://192.168.0.106:5000/api',
+//   methods: ['GET', 'POST', 'PATCH'],
+//   allowedHeaders: ['Content-Type'],
+// }));
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://192.168.0.106:5000/api',
+  origin: process.env.FRONTEND_URL || '*',   // set FRONTEND_URL in Railway env vars
   methods: ['GET', 'POST', 'PATCH'],
-  allowedHeaders: ['Content-Type'],
+  allowedHeaders: ['Content-Type', 'x-machine-id', 'x-timestamp', 'x-signature', 'x-api-key'],
 }));
 app.use(express.json());
 // Add this line after app.use(express.json())
@@ -729,7 +734,9 @@ app.post("/api/register-machine", async (req, res) => {
       return res.json({
         MACHINE_ID: existing.machine_id,   // ✅ fixed key name
         API_KEY:    apiKey,
-        API_BASE:   "http://192.168.0.106:5000/api",  // ✅ colon not equals
+        // API_BASE:   "http://192.168.0.106:5000/api",  // ✅ colon not equals
+        API_BASE: process.env.API_BASE_URL || "http://localhost:5000/api"
+
       });
     }
 
@@ -757,7 +764,8 @@ app.post("/api/register-machine", async (req, res) => {
     res.json({
       MACHINE_ID: machine.machine_id,
       API_KEY:    apiKey,
-      API_BASE:   "http://192.168.0.106:5000/api",  // ✅ colon not equals
+      // API_BASE:   "http://192.168.0.106:5000/api",  // ✅ colon not equals
+      API_BASE: process.env.API_BASE_URL || "http://localhost:5000/api"
     });
 
   } catch (err) {
@@ -796,8 +804,12 @@ const { initSocket } = require("./server/socket");
 const server = http.createServer(app);
 initSocket(server);
 
-server.listen(5000, "0.0.0.0", () => {    // ✅ bind to all interfaces
-  console.log("Server running on 5000");
+// server.listen(5000, "0.0.0.0", () => {    // ✅ bind to all interfaces
+//   console.log("Server running on 5000");
+// });
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on ${PORT}`);
 });
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
