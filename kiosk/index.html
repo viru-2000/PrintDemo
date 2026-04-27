@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PrintKiosk — Enter OTP</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0f1724;
+      color: #fff;
+      font-family: 'Segoe UI', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      user-select: none;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 24px;
+      letter-spacing: 1px;
+    }
+
+    /* OTP display */
+    #otp {
+      width: 320px;
+      text-align: center;
+      font-size: 2.4rem;
+      font-weight: 700;
+      letter-spacing: 12px;
+      padding: 14px 20px;
+      border: none;
+      border-radius: 10px;
+      background: #fff;
+      color: #0f1724;
+      margin-bottom: 24px;
+      outline: none;
+      cursor: default;
+    }
+
+    /* Keypad grid */
+    .keypad {
+      display: grid;
+      grid-template-columns: repeat(3, 90px);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .key {
+      background: #1e2d45;
+      border: none;
+      border-radius: 10px;
+      color: #fff;
+      font-size: 1.5rem;
+      font-weight: 600;
+      height: 70px;
+      cursor: pointer;
+      transition: background 0.12s, transform 0.08s;
+    }
+
+    .key:active {
+      background: #2a3f5f;
+      transform: scale(0.95);
+    }
+
+    .key.clear    { background: #1e2d45; }
+    .key.backspace { background: #1e2d45; font-size: 1.2rem; }
+
+    /* Print button */
+    #printBtn {
+      width: 300px;
+      padding: 16px;
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      background: #22c55e;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.08s;
+      margin-bottom: 16px;
+    }
+
+    #printBtn:active { background: #16a34a; transform: scale(0.97); }
+
+    /* Status */
+    #status {
+      font-size: 1rem;
+      min-height: 24px;
+      color: #f87171;
+      letter-spacing: 0.5px;
+    }
+
+    #status.success { color: #4ade80; }
+    #status.processing { color: #facc15; }
+  </style>
+</head>
+<body>
+
+  <h1>Enter OTP</h1>
+
+  <!-- OTP display (readonly, filled by keypad) -->
+  <input type="text" id="otp" readonly placeholder="- - - -" />
+
+  <!-- Keypad -->
+  <div class="keypad">
+    <button class="key" onclick="press('1')">1</button>
+    <button class="key" onclick="press('2')">2</button>
+    <button class="key" onclick="press('3')">3</button>
+    <button class="key" onclick="press('4')">4</button>
+    <button class="key" onclick="press('5')">5</button>
+    <button class="key" onclick="press('6')">6</button>
+    <button class="key" onclick="press('7')">7</button>
+    <button class="key" onclick="press('8')">8</button>
+    <button class="key" onclick="press('9')">9</button>
+    <button class="key clear"     onclick="clearOtp()">C</button>
+    <button class="key"           onclick="press('0')">0</button>
+    <button class="key backspace" onclick="backspace()">⌫</button>
+  </div>
+
+  <!-- Print button -->
+  <button id="printBtn" onclick="submitOtp()">PRINT</button>
+
+  <!-- Status message -->
+  <div id="status"></div>
+
+  <!-- ✅ renderer.js holds all the UI logic -->
+  <script src="renderer.js"></script>
+
+</body>
+</html>

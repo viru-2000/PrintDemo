@@ -1,5 +1,7 @@
 {
   "MACHINE_ID": "MH1000",
-  "API_KEY": "eeaf44fb437f6b39bd3b46ec27950c22569f626eab67a15ddf9e9f2a4dcd21d0",
-  "API_BASE": "http://localhost:5000/api"
+  "DEVICE_SERIAL": "78:2b:46:74:e2:94",
+  "API_KEY": "b4037e30d81fcc89666545415900a6636224f58d703cb43debeff2b18d2551a9",
+  "API_BASE": "http://192.168.0.106:5000/api",
+  "PRINTER_NAME": "Canon_MG2577S_Series"
 }

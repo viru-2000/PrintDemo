@@ -1,9 +1,11 @@
-import PrintForm from "./components/PrintForm";
+import PrintForm from "./components/PrintForm/index";
+
 
 function App() {
   return (
     <div style={styles.container}>
       <PrintForm />
+     
     </div>
   );
 }
