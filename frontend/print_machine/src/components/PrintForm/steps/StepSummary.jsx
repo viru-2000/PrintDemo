@@ -123,11 +123,11 @@ import React from "react";
 
 import { ImCross } from "react-icons/im";
 import { MdAttachFile } from "react-icons/md";
-function formatBytes(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+// function formatBytes(bytes) {
+//   if (bytes < 1024) return `${bytes} B`;
+//   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+//   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+// }
 
 const COLOR_LABELS = { bw: "Black & White", color: "Color" };
 const SIDE_LABELS  = { single: "Single Side", duplex: "Duplex" };
