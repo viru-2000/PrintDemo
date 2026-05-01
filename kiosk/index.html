@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PrintKiosk — Enter OTP</title>
+  <title>PrintKiosk</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -11,104 +11,254 @@
       background: #0f1724;
       color: #fff;
       font-family: 'Segoe UI', sans-serif;
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* ── WELCOME SCREEN ── */
+    #welcome {
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       height: 100vh;
-      user-select: none;
+      cursor: pointer;
     }
 
-    h1 {
-      font-size: 2rem;
+    #welcome h1 {
+      font-size: 2.8rem;
       font-weight: 700;
-      margin-bottom: 24px;
       letter-spacing: 1px;
+      color: #fff;
+      margin-bottom: 10px;
+      text-align: center;
     }
 
-    /* OTP display */
-    #otp {
-      width: 320px;
+    .tagline {
+      font-size: 1.1rem;
+      color: #22c55e;
+      letter-spacing: 3px;
+      font-weight: 500;
+      text-transform: uppercase;
+      margin-bottom: 52px;
       text-align: center;
+    }
+
+    /* ── NAMASTE HANDS ── */
+    .namaste-wrap {
+  width: 280px;
+  height: 200px;
+  margin-bottom: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.namaste-gif {
+  width: 260px;
+  height: auto;
+  mix-blend-mode: screen;   /* ✅ removes white background */
+}
+
+
+
+    .touch-hint {
+      font-size: 0.95rem;
+      color: rgba(255,255,255,0.35);
+      letter-spacing: 1px;
+      animation: blink 2.2s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%,100% { opacity: 0.28; }
+      50%      { opacity: 0.9;  }
+    }
+
+    /* ── OTP SCREEN ── */
+    #otpScreen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+
+    #otpScreen h2 {
+      font-size: 1.6rem;
+      font-weight: 600;
+      margin-bottom: 28px;
+      color: #e2e8f0;
+    }
+
+    /* ── DIGIT BOXES — shows actual number ── */
+    .otp-digits {
+      display: flex;
+      gap: 14px;
+      margin-bottom: 36px;
+    }
+
+    .otp-box {
+      width: 66px;
+      height: 74px;
+      border-radius: 12px;
+      background: #1e2d45;
+      border: 2px solid #2a3f5f;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       font-size: 2.4rem;
       font-weight: 700;
-      letter-spacing: 12px;
-      padding: 14px 20px;
-      border: none;
-      border-radius: 10px;
-      background: #fff;
-      color: #0f1724;
-      margin-bottom: 24px;
-      outline: none;
-      cursor: default;
+      font-family: 'Courier New', monospace;
+      color: #fff;
+      transition: border-color 0.15s, background 0.15s;
     }
 
-    /* Keypad grid */
+    .otp-box.filled {
+      border-color: #22c55e;
+      background: #0a2318;
+      color: #4ade80;
+    }
+
+    .otp-box.active {
+      border-color: #3b82f6;
+      background: #0d1f38;
+      animation: boxGlow 0.9s ease-in-out infinite;
+    }
+
+    @keyframes boxGlow {
+      0%,100% { border-color: #3b82f6; }
+      50%      { border-color: #93c5fd; box-shadow: 0 0 14px rgba(59,130,246,0.35); }
+    }
+
+    /* ── KEYPAD ── */
     .keypad {
       display: grid;
-      grid-template-columns: repeat(3, 90px);
-      gap: 12px;
+      grid-template-columns: repeat(3, 88px);
+      gap: 10px;
       margin-bottom: 20px;
     }
 
     .key {
       background: #1e2d45;
-      border: none;
-      border-radius: 10px;
+      border: 1.5px solid #2a3f5f;
+      border-radius: 12px;
       color: #fff;
-      font-size: 1.5rem;
+      font-size: 1.6rem;
       font-weight: 600;
-      height: 70px;
+      height: 72px;
       cursor: pointer;
-      transition: background 0.12s, transform 0.08s;
+      transition: background 0.1s, transform 0.08s, border-color 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .key:active {
       background: #2a3f5f;
-      transform: scale(0.95);
+      transform: scale(0.93);
+      border-color: #3b82f6;
     }
 
-    .key.clear    { background: #1e2d45; }
-    .key.backspace { background: #1e2d45; font-size: 1.2rem; }
-
-    /* Print button */
-    #printBtn {
-      width: 300px;
-      padding: 16px;
-      font-size: 1.2rem;
-      font-weight: 700;
-      letter-spacing: 2px;
-      background: #22c55e;
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: background 0.15s, transform 0.08s;
-      margin-bottom: 16px;
-    }
-
-    #printBtn:active { background: #16a34a; transform: scale(0.97); }
-
-    /* Status */
-    #status {
-      font-size: 1rem;
-      min-height: 24px;
+    .key.key-cancel {
+      background: #2d1515;
+      border-color: #4d2222;
       color: #f87171;
+      font-size: 0.9rem;
+      font-weight: 700;
       letter-spacing: 0.5px;
     }
 
-    #status.success { color: #4ade80; }
+    .key.key-cancel:active {
+      background: #3d1a1a;
+      border-color: #f87171;
+    }
+
+    .key.key-back { font-size: 1.4rem; }
+
+    /* ── PRINT BUTTON ── */
+    #printBtn {
+      width: 284px;
+      padding: 17px;
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      background: #162a1e;
+      color: rgba(255,255,255,0.3);
+      border: 2px solid #1e3d28;
+      border-radius: 12px;
+      cursor: default;
+      transition: all 0.2s;
+      margin-bottom: 14px;
+    }
+
+    #printBtn.ready {
+      background: #22c55e;
+      color: #fff;
+      border-color: #22c55e;
+      cursor: pointer;
+      box-shadow: 0 0 28px rgba(34,197,94,0.38);
+    }
+
+    #printBtn.ready:active { transform: scale(0.97); }
+
+    /* ── STATUS ── */
+    #status {
+      font-size: 0.95rem;
+      min-height: 22px;
+      color: #f87171;
+      text-align: center;
+      transition: opacity 0.3s;
+    }
+
+    #status.success    { color: #4ade80; }
     #status.processing { color: #facc15; }
+    #status.hidden     { opacity: 0;     }
+
+    #backToWelcome {
+      margin-top: 18px;
+      font-size: 0.82rem;
+      color: rgba(255,255,255,0.24);
+      cursor: pointer;
+      letter-spacing: 0.5px;
+      transition: color 0.2s;
+    }
+    #backToWelcome:hover { color: rgba(255,255,255,0.55); }
   </style>
 </head>
 <body>
 
-  <h1>Enter OTP</h1>
+<!-- ══════════════ WELCOME ══════════════ -->
+<div id="welcome" onclick="showOtp()">
 
-  <!-- OTP display (readonly, filled by keypad) -->
-  <input type="text" id="otp" readonly placeholder="- - - -" />
+  <h1>Welcome to PrintKiosk</h1>
+  <p class="tagline">Upload &nbsp;·&nbsp; Pay &nbsp;·&nbsp; Print</p>
 
-  <!-- Keypad -->
+  <div class="namaste-wrap">
+  <img
+    src="namaste.gif"
+    class="namaste-gif"
+    alt="Namaste"
+  />
+</div>
+
+  <p class="touch-hint">Touch anywhere to begin</p>
+
+</div>
+
+
+<!-- ══════════════ OTP SCREEN ══════════════ -->
+<div id="otpScreen">
+
+  <h2>Enter Your OTP</h2>
+
+  <div class="otp-digits">
+    <div class="otp-box" id="d0"></div>
+    <div class="otp-box" id="d1"></div>
+    <div class="otp-box" id="d2"></div>
+    <div class="otp-box" id="d3"></div>
+  </div>
+
   <div class="keypad">
     <button class="key" onclick="press('1')">1</button>
     <button class="key" onclick="press('2')">2</button>
@@ -119,19 +269,123 @@
     <button class="key" onclick="press('7')">7</button>
     <button class="key" onclick="press('8')">8</button>
     <button class="key" onclick="press('9')">9</button>
-    <button class="key clear"     onclick="clearOtp()">C</button>
-    <button class="key"           onclick="press('0')">0</button>
-    <button class="key backspace" onclick="backspace()">⌫</button>
+    <button class="key key-cancel" onclick="cancelOtp()">CANCEL</button>
+    <button class="key" onclick="press('0')">0</button>
+    <button class="key key-back"   onclick="backspace()">⌫</button>
   </div>
 
-  <!-- Print button -->
   <button id="printBtn" onclick="submitOtp()">PRINT</button>
 
-  <!-- Status message -->
-  <div id="status"></div>
+  <div id="status" class="hidden">—</div>
 
-  <!-- ✅ renderer.js holds all the UI logic -->
-  <script src="renderer.js"></script>
+  <div id="backToWelcome" onclick="showWelcome()">← Back to welcome</div>
+
+</div>
+
+
+<script>
+  let otp = "";
+
+  function showOtp() {
+    document.getElementById("welcome").style.display    = "none";
+    document.getElementById("otpScreen").style.display = "flex";
+    otp = "";
+    updateBoxes();
+    setStatus("", "hidden");
+    document.getElementById("printBtn").disabled = false;
+  }
+
+  function showWelcome() {
+    document.getElementById("otpScreen").style.display = "none";
+    document.getElementById("welcome").style.display   = "flex";
+    otp = "";
+  }
+
+  function press(digit) {
+    if (otp.length >= 4) return;
+    otp += digit;
+    updateBoxes();
+    setStatus("", "hidden");
+  }
+
+  function backspace() {
+    if (!otp.length) return;
+    otp = otp.slice(0, -1);
+    updateBoxes();
+    setStatus("", "hidden");
+  }
+
+  function cancelOtp() {
+    otp = "";
+    updateBoxes();
+    setStatus("", "hidden");
+  }
+
+  function updateBoxes() {
+    for (let i = 0; i < 4; i++) {
+      const box = document.getElementById("d" + i);
+      box.className = "otp-box";
+      if (i < otp.length) {
+        box.textContent = otp[i];        // ✅ actual digit shown
+        box.classList.add("filled");
+      } else {
+        box.textContent = "";
+        if (i === otp.length) box.classList.add("active");
+      }
+    }
+    const btn = document.getElementById("printBtn");
+    btn.className = otp.length === 4 ? "ready" : "";
+  }
+
+  async function submitOtp() {
+    if (otp.length !== 4) return;
+    setStatus("Processing...", "processing");
+    document.getElementById("printBtn").className = "";
+    document.getElementById("printBtn").disabled  = true;
+
+    try {
+      let result;
+      if (typeof window.kioskAPI !== "undefined") {
+        result = await window.kioskAPI.handleInput(otp);
+      } else if (typeof handleInput !== "undefined") {
+        result = await handleInput(otp);
+      } else {
+        result = "✅ OTP received: " + otp;
+      }
+
+      if (result && result.startsWith("✅")) {
+        setStatus(result, "success");
+        setTimeout(() => { otp = ""; updateBoxes(); showWelcome(); }, 2800);
+      } else {
+        setStatus(result || "❌ Something went wrong", "");
+        otp = "";
+        updateBoxes();
+        document.getElementById("printBtn").disabled = false;
+      }
+    } catch (err) {
+      setStatus("❌ " + err.message, "");
+      otp = "";
+      updateBoxes();
+      document.getElementById("printBtn").disabled = false;
+    }
+  }
+
+  function setStatus(msg, cls) {
+    const el = document.getElementById("status");
+    el.textContent = msg || "—";
+    el.className   = cls || "";
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (document.getElementById("otpScreen").style.display !== "flex") return;
+    if (e.key >= "0" && e.key <= "9") press(e.key);
+    if (e.key === "Backspace") { e.preventDefault(); backspace(); }
+    if (e.key === "Escape")    cancelOtp();
+    if (e.key === "Enter")     submitOtp();
+  });
+</script>
+
+<script src="renderer.js" onerror="console.log('renderer.js not loaded')"></script>
 
 </body>
 </html>

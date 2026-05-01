@@ -1,4 +1,4 @@
-// kioskCore.js — Laptop/Pi compatible — Option C (Hybrid: Socket + Disk Cache)
+// kioskCore.js — Raspberry Pi Ready — Option C (Hybrid: Socket + Disk Cache)
 const axios        = require("axios");
 const fs           = require("fs");
 const path         = require("path");
@@ -10,22 +10,32 @@ const { io: socketIO } = require("socket.io-client");
 
 /* ===============================
    CONFIG
+   ✅ Pi-ready: absolute paths used so the app works
+   regardless of which directory you launch it from.
+   Change PROJECT_ROOT if your folder name is different.
 =============================== */
-const FALLBACK_API_BASE  = "http://192.168.0.106:5000/api"; // ✅ used ONLY on very first boot
-const CONFIG_FILE        = "./config.json";
-const DOWNLOAD_DIR       = "./kiosk/files";
-const CACHE_FILE         = "./kiosk/jobs.json";
+const IS_PI      = process.platform === "linux";
+const IS_WINDOWS = process.platform === "win32";
+
+// ✅ Set this to your actual project folder on the Pi
+const PROJECT_ROOT = IS_PI
+  ? "/home/pi/kiosk"          // ← Pi path  (change if folder name differs)
+  : path.resolve(__dirname);     // ← Laptop: use wherever the file actually is
+
+const FALLBACK_API_BASE  = "http://192.168.0.104:5000/api"; // laptop server IP — first boot only
+const CONFIG_FILE        = path.join(PROJECT_ROOT, "config.json");
+const DOWNLOAD_DIR       = path.join(PROJECT_ROOT, "kiosk", "files");
+const CACHE_FILE         = path.join(PROJECT_ROOT, "kiosk", "jobs.json");
 const HEARTBEAT_INTERVAL = 30000;
 const POLL_INTERVAL      = 30000;
 
 /* ===============================
    LOAD API_BASE FROM CONFIG FIRST
-   ✅ Runs before anything else so API_BASE is always correct
-   from the very first line — no more localhost / wrong IP issue.
-   Falls back to FALLBACK_API_BASE only on first ever boot
+   ✅ Reads saved IP from config.json before anything else.
+   Falls back to FALLBACK_API_BASE only on very first boot
    when config.json does not exist yet.
-   After first registration, API_BASE is saved in config.json
-   and loaded automatically on every future boot.
+   After first registration, correct IP is saved automatically
+   and used on every future boot — no hardcoding needed.
 =============================== */
 function getApiBase() {
   try {
@@ -46,7 +56,7 @@ function getApiBase() {
   return FALLBACK_API_BASE;
 }
 
-// ✅ API_BASE is set once here — correct on every boot automatically
+// ✅ API_BASE is resolved immediately — correct on every boot
 let API_BASE = getApiBase();
 
 /* ===============================
@@ -127,9 +137,12 @@ function ensureDir() {
 }
 
 /* ===============================
-   DEVICE ID
+   DEVICE SERIAL  (MAC address)
+   ✅ Sent to server during registration.
+   Server uses this to look up machine_id (e.g. "MH1000").
+   NOT used as MACHINE_ID in API requests — server's ID is used.
 =============================== */
-function getDeviceId() {
+function getDeviceSerial() {
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
@@ -138,55 +151,54 @@ function getDeviceId() {
       }
     }
   }
-  // Fallback: use hostname if no valid MAC found
-  return os.hostname();
+  return os.hostname(); // fallback if no valid MAC found
 }
 
 /* ===============================
    REGISTER MACHINE
-   MACHINE_ID is computed locally from MAC address.
-   Server returns API_KEY + API_BASE.
-   We merge MACHINE_ID into the saved config ourselves.
+   ✅ Sends MAC to server → server returns MACHINE_ID ("MH1000"),
+   API_KEY, and API_BASE. We save all of them to config.json.
+   MACHINE_ID comes from server — never the MAC address.
+
+   Server response: { MACHINE_ID: "MH1000", API_KEY: "...", API_BASE: "..." }
 =============================== */
 async function registerMachine() {
   console.log("🔄 Registering machine...");
-  const deviceSerial = getDeviceId();
+  const deviceSerial = getDeviceSerial();
   console.log("🔑 Device serial (MAC):", deviceSerial);
- 
+
   const res = await axios.post(`${API_BASE}/register-machine`, { deviceSerial });
- 
   console.log("📡 Server registration response:", JSON.stringify(res.data));
- 
-  // ✅ MACHINE_ID must come from server (e.g. "MH1000"), not the MAC address
-  const machineId = res.data.MACHINE_ID    // ← your server sends THIS
-               || res.data.machine_id
-               || res.data.machineId;
- 
+
+  // ✅ Accept all casing variants — server sends UPPERCASE
+  const machineId = res.data.MACHINE_ID    // ← your server sends this
+                 || res.data.machine_id    // snake_case fallback
+                 || res.data.machineId;    // camelCase fallback
+
   if (!machineId) {
-    // Log exactly what server sent so you can debug field name easily
     throw new Error(
-      `Server did not return machine_id. Got keys: ${Object.keys(res.data).join(", ")}. ` +
+      `Server did not return MACHINE_ID. Got keys: ${Object.keys(res.data).join(", ")}. ` +
       `Full response: ${JSON.stringify(res.data)}`
     );
   }
- 
+
   const apiKey  = res.data.API_KEY  || res.data.api_key  || res.data.apiKey;
   const apiBase = res.data.API_BASE || res.data.api_base || res.data.apiBase || API_BASE;
- 
+
   if (!apiKey) {
     throw new Error(
       `Server did not return API_KEY. Got keys: ${Object.keys(res.data).join(", ")}`
     );
   }
- 
+
   const fullConfig = {
-    MACHINE_ID:   machineId,    // ✅ "MH1000" from server — used in all API requests
-    DEVICE_SERIAL: deviceSerial, // MAC address — saved for reference only
-    API_KEY:      apiKey,
-    API_BASE:     apiBase,
-    PRINTER_NAME: null,          // filled later by ensurePrinter()
+    MACHINE_ID:    machineId,     // ✅ "MH1000" — used in all API requests
+    DEVICE_SERIAL: deviceSerial,  // MAC — reference only
+    API_KEY:       apiKey,
+    API_BASE:      apiBase,       // ✅ saved so next boot reads correct IP
+    PRINTER_NAME:  null,          // filled later by ensurePrinter()
   };
- 
+
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(fullConfig, null, 2));
   console.log("✅ Machine registered — MACHINE_ID:", machineId);
   console.log("💾 Config saved to:", CONFIG_FILE);
@@ -210,7 +222,7 @@ function loadConfig() {
 
 /* ===============================
    SAVE CONFIG HELPER
-   Always merges — never loses existing fields.
+   ✅ Always merges into existing config — never loses fields.
 =============================== */
 function saveConfig(updates) {
   const current = loadConfig() || {};
@@ -225,13 +237,21 @@ async function initMachine() {
   try {
     let config = loadConfig();
 
-    // Validate that config has ALL required fields; re-register if any are missing
+    // ✅ Re-register if config is missing, incomplete, or has old MAC-based MACHINE_ID
+    const isMacAddress = config?.MACHINE_ID &&
+      /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(config.MACHINE_ID);
+
     const isValid = config
       && config.API_KEY
-      && config.MACHINE_ID;
+      && config.MACHINE_ID
+      && !isMacAddress;
 
     if (!isValid) {
-      console.log("⚠️  Config missing or incomplete — re-registering...");
+      if (isMacAddress) {
+        console.log("⚠️  Old config — MACHINE_ID is a MAC address. Re-registering to get server ID...");
+      } else {
+        console.log("⚠️  Config missing or incomplete — registering...");
+      }
       try { fs.unlinkSync(CONFIG_FILE); } catch {}
       config = await registerMachine();
     }
@@ -239,13 +259,15 @@ async function initMachine() {
     MACHINE_ID = config.MACHINE_ID;
     API_KEY    = config.API_KEY;
 
-    // ✅ Confirm API_BASE in memory matches config (covers edge case of server IP change)
     if (config.API_BASE) {
       API_BASE = config.API_BASE;
-      console.log("🌐 API_BASE confirmed from config:", API_BASE);
     }
 
-    console.log("✅ Machine Ready:", MACHINE_ID);
+    console.log("✅ Machine Ready");
+    console.log("   MACHINE_ID :", MACHINE_ID);
+    console.log("   API_BASE   :", API_BASE);
+    console.log("   Platform   :", process.platform, IS_PI ? "(Raspberry Pi)" : "(Laptop/Dev)");
+    console.log("   Config     :", CONFIG_FILE);
   } catch (err) {
     console.error("❌ Init failed:", err.message);
     process.exit(1);
@@ -277,11 +299,14 @@ function getHeaders(body) {
 
 /* ===============================
    PRINTER DETECTION
+   ✅ lpstat -p is Linux/CUPS — works on Raspberry Pi.
+   On Windows (laptop dev) it is skipped gracefully.
+   Printer is auto-detected and saved to config on Pi.
 =============================== */
 function detectPrinter() {
   return new Promise((resolve, reject) => {
     exec("lpstat -p", (err, stdout) => {
-      if (err) return reject(err);
+      if (err) return reject(new Error(`lpstat failed: ${err.message}`));
       const match = stdout.match(/printer\s+(\S+)/);
       if (match) return resolve(match[1]);
       reject(new Error("No printer found in lpstat output"));
@@ -289,31 +314,32 @@ function detectPrinter() {
   });
 }
 
-/* ===============================
-   ENSURE PRINTER
-   Uses saveConfig() so PRINTER_NAME is merged into existing
-   config without overwriting any other fields.
-=============================== */
 async function ensurePrinter() {
   const config = loadConfig();
 
-  // If printer already saved in config, use it
+  // ✅ If already saved in config, use it — no detection needed
   if (config?.PRINTER_NAME) {
     PRINTER_NAME = config.PRINTER_NAME;
     console.log("✅ Printer loaded from config:", PRINTER_NAME);
     return;
   }
 
+  // ✅ Skip on Windows — lpstat not available, Pi will handle it
+  if (IS_WINDOWS) {
+    console.log("⚠️  Windows detected — skipping printer detection");
+    console.log("💡 Printer auto-detected when running on Raspberry Pi");
+    return;
+  }
+
+  // ✅ On Pi / Linux — detect and save
   try {
     PRINTER_NAME = await detectPrinter();
     console.log("✅ Printer detected:", PRINTER_NAME);
-
-    // saveConfig() merges — preserves all other config fields
-    saveConfig({ PRINTER_NAME });
-    console.log("💾 Printer name saved to config");
+    saveConfig({ PRINTER_NAME });   // merges into config — no other fields lost
+    console.log("💾 Printer saved to config");
   } catch (err) {
     console.log("⚠️  No printer detected:", err.message);
-    console.log("🔄 Retrying printer detection in 5s...");
+    console.log("🔄 Retrying in 5s...");
     setTimeout(ensurePrinter, 5000);
   }
 }
@@ -342,7 +368,7 @@ async function downloadFile(fileUrl, jobId = null) {
     url,
     method:       "GET",
     responseType: "arraybuffer",
-    timeout:      30000,   // 30s timeout — important for slow Pi connections
+    timeout:      30000,   // 30s — important for slow Pi connections
   });
 
   fs.writeFileSync(filePath, Buffer.from(response.data));
@@ -440,18 +466,17 @@ async function startPoller() {
 
 /* ===============================
    PRINT FILE — cross-platform
-   Windows → SumatraPDF (silent print)
-   Linux/Mac → CUPS lp command
+   ✅ Windows → SumatraPDF (silent print)
+   ✅ Linux/Pi → CUPS lp command
 =============================== */
 function printFile(filePath, job) {
-  if (!PRINTER_NAME) throw new Error("Printer not ready — still detecting");
+  if (!PRINTER_NAME) throw new Error("Printer not ready — not detected yet");
 
-  const copies    = job.copies || 1;
-  const isWindows = process.platform === "win32";
-
+  const copies = job.copies || 1;
   let command;
 
-  if (isWindows) {
+  if (IS_WINDOWS) {
+    // ── WINDOWS ───────────────────────────────────────────────
     const sumatraPath   = `C:\\Program Files\\SumatraPDF\\SumatraPDF.exe`;
     const sumatraPath86 = `C:\\Program Files (x86)\\SumatraPDF\\SumatraPDF.exe`;
 
@@ -475,7 +500,7 @@ function printFile(filePath, job) {
     }
 
   } else {
-    // ── LINUX / MAC (Raspberry Pi) — CUPS ─────────────────────
+    // ── LINUX / RASPBERRY PI — CUPS ───────────────────────────
     const sides = job.printSide === "duplex"
       ? "-o sides=two-sided-long-edge"
       : "-o sides=one-sided";
@@ -571,26 +596,23 @@ async function handleInput(input) {
 
   try {
     // STEP 1 — Verify OTP/QR with server
-    console.log("🔐 Sending unlock request to server...");
+    console.log("🔐 Sending unlock request...");
     const unlockRes = await axios.post(
       `${API_BASE}/kiosk/unlock`,
       payload,
-      {
-        headers: getHeaders(payload),
-        timeout: 15000,
-      }
+      { headers: getHeaders(payload), timeout: 15000 }
     );
     const job = unlockRes.data;
     jobId = job.jobId;
     console.log("🔓 Job unlocked:", jobId, "| Details:", JSON.stringify(job));
 
-    // STEP 2 — Use cached file or download
+    // STEP 2 — Use cached file or download fresh
     const cached = getFromCache(jobId);
     if (cached && fs.existsSync(cached)) {
       localFilePath = cached;
       console.log("⚡ Using pre-cached file:", localFilePath);
     } else {
-      console.log("⬇️  Cache miss — downloading now...");
+      console.log("⬇️  Cache miss — downloading...");
       localFilePath = await downloadFile(job.filePath, jobId);
       console.log("✅ Downloaded to:", localFilePath);
     }
@@ -647,8 +669,7 @@ async function handleInput(input) {
 }
 
 /* ===============================
-   STATUS — exported for Electron
-   Lets renderer check machine/printer health
+   STATUS — exported for Electron renderer
 =============================== */
 function getStatus() {
   return {
@@ -657,11 +678,12 @@ function getStatus() {
     printer:      PRINTER_NAME || null,
     printerReady: !!PRINTER_NAME,
     cacheSize:    Object.keys(fileCache).length,
+    platform:     process.platform,
   };
 }
 
 /* ===============================
-   MAIN LOOP  (CLI only)
+   MAIN LOOP  (CLI only — not used in Electron)
 =============================== */
 async function mainLoop() {
   const rl = readline.createInterface({
@@ -688,9 +710,10 @@ async function mainLoop() {
 }
 
 /* ===============================
-   START  (only when run directly)
+   START
 =============================== */
 if (require.main === module) {
+  // Running directly via: node kioskCore.js
   (async () => {
     ensureDir();
     loadCache();
@@ -702,7 +725,7 @@ if (require.main === module) {
     mainLoop();
   })();
 } else {
-  // ✅ Required as a module by Electron — boot everything except mainLoop
+  // ✅ Required as a module by Electron (index.js) — mainLoop() NOT called
   (async () => {
     ensureDir();
     loadCache();
@@ -714,8 +737,1006 @@ if (require.main === module) {
   })();
 }
 
-// ✅ Exports for Electron preload
+// ✅ Exports for Electron preload.js
 module.exports = { handleInput, getStatus };
+
+
+
+// // kioskCore.js — Laptop/Pi compatible — Option C (Hybrid: Socket + Disk Cache)
+// const axios        = require("axios");
+// const fs           = require("fs");
+// const path         = require("path");
+// const { exec }     = require("child_process");
+// const crypto       = require("crypto");
+// const os           = require("os");
+// const readline     = require("readline");
+// const { io: socketIO } = require("socket.io-client");
+
+// /* ===============================
+//    CONFIG
+// =============================== */
+// const FALLBACK_API_BASE  = "http://192.168.0.106:5000/api";
+
+// // ✅ FIXED: Absolute paths for Raspberry Pi
+// const CONFIG_FILE        = "/home/pi/kiosk/config.json";
+// const DOWNLOAD_DIR       = "/home/pi/kiosk/files";
+// const CACHE_FILE         = "/home/pi/kiosk/jobs.json";
+
+// const HEARTBEAT_INTERVAL = 30000;
+// const POLL_INTERVAL      = 30000;
+
+// /* ===============================
+//    LOAD API_BASE FROM CONFIG FIRST
+// =============================== */
+// function getApiBase() {
+//   try {
+//     if (fs.existsSync(CONFIG_FILE)) {
+//       const raw = fs.readFileSync(CONFIG_FILE, "utf-8").trim();
+//       if (raw) {
+//         const config = JSON.parse(raw);
+//         if (config.API_BASE) {
+//           console.log("🌐 API_BASE loaded from config:", config.API_BASE);
+//           return config.API_BASE;
+//         }
+//       }
+//     }
+//   } catch (err) {
+//     console.warn("⚠️  Could not read API_BASE from config, using fallback:", err.message);
+//   }
+//   console.log("🌐 API_BASE using fallback (first boot):", FALLBACK_API_BASE);
+//   return FALLBACK_API_BASE;
+// }
+
+// let API_BASE = getApiBase();
+
+// /* ===============================
+//    GLOBALS
+// =============================== */
+// let MACHINE_ID   = null;
+// let API_KEY      = null;
+// let PRINTER_NAME = null;
+
+// let fileCache = {};
+
+// /* ===============================
+//    CACHE HELPERS
+// =============================== */
+// function loadCache() {
+//   try {
+//     if (!fs.existsSync(CACHE_FILE)) return;
+//     const raw = fs.readFileSync(CACHE_FILE, "utf-8").trim();
+//     if (!raw) return;
+//     fileCache = JSON.parse(raw);
+//     const now = Date.now();
+//     for (const jobId of Object.keys(fileCache)) {
+//       if (fileCache[jobId].expires < now) {
+//         safeDelete(fileCache[jobId].filePath);
+//         delete fileCache[jobId];
+//       }
+//     }
+//     console.log(`📦 Cache loaded: ${Object.keys(fileCache).length} job(s)`);
+//   } catch (err) {
+//     console.error("Cache load error:", err.message);
+//     fileCache = {};
+//   }
+// }
+
+// function saveCache() {
+//   try {
+//     fs.writeFileSync(CACHE_FILE, JSON.stringify(fileCache, null, 2));
+//   } catch (err) {
+//     console.error("Cache save error:", err.message);
+//   }
+// }
+
+// function addToCache(jobId, filePath, expiresAt) {
+//   fileCache[jobId] = { filePath, expires: new Date(expiresAt).getTime() };
+//   saveCache();
+// }
+
+// function getFromCache(jobId) {
+//   const entry = fileCache[jobId];
+//   if (!entry) return null;
+//   if (entry.expires < Date.now()) {
+//     safeDelete(entry.filePath);
+//     delete fileCache[jobId];
+//     saveCache();
+//     return null;
+//   }
+//   return entry.filePath;
+// }
+
+// function removeFromCache(jobId) {
+//   delete fileCache[jobId];
+//   saveCache();
+// }
+
+// function safeDelete(filePath) {
+//   if (filePath && fs.existsSync(filePath)) {
+//     try { fs.unlinkSync(filePath); } catch {}
+//   }
+// }
+
+// /* ===============================
+//    ENSURE DIRS
+// =============================== */
+// function ensureDir() {
+//   [DOWNLOAD_DIR, path.dirname(CACHE_FILE)].forEach(dir => {
+//     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+//   });
+// }
+
+// /* ===============================
+//    DEVICE ID
+// =============================== */
+// function getDeviceId() {
+//   const interfaces = os.networkInterfaces();
+//   for (const name of Object.keys(interfaces)) {
+//     for (const iface of interfaces[name]) {
+//       if (!iface.internal && iface.mac && iface.mac !== "00:00:00:00:00:00") {
+//         return iface.mac;
+//       }
+//     }
+//   }
+//   return os.hostname();
+// }
+
+// /* ===============================
+//    REGISTER MACHINE
+// =============================== */
+// async function registerMachine() {
+//   console.log("🔄 Registering machine...");
+//   const deviceSerial = getDeviceId();
+//   console.log("🔑 Device serial (MAC):", deviceSerial);
+
+//   const res = await axios.post(`${API_BASE}/register-machine`, { deviceSerial });
+
+//   const machineId = res.data.MACHINE_ID
+//                || res.data.machine_id
+//                || res.data.machineId;
+
+//   if (!machineId) {
+//     throw new Error(`Server did not return machine_id`);
+//   }
+
+//   const apiKey  = res.data.API_KEY  || res.data.api_key  || res.data.apiKey;
+//   const apiBase = res.data.API_BASE || API_BASE;
+
+//   const fullConfig = {
+//     MACHINE_ID: machineId,
+//     DEVICE_SERIAL: deviceSerial,
+//     API_KEY: apiKey,
+//     API_BASE: apiBase,
+//     PRINTER_NAME: null,
+//   };
+
+//   fs.writeFileSync(CONFIG_FILE, JSON.stringify(fullConfig, null, 2));
+//   return fullConfig;
+// }
+
+// /* ===============================
+//    LOAD CONFIG
+// =============================== */
+// function loadConfig() {
+//   try {
+//     if (!fs.existsSync(CONFIG_FILE)) return null;
+//     const data = fs.readFileSync(CONFIG_FILE, "utf-8").trim();
+//     if (!data) return null;
+//     return JSON.parse(data);
+//   } catch {
+//     try { fs.unlinkSync(CONFIG_FILE); } catch {}
+//     return null;
+//   }
+// }
+
+// /* ===============================
+//    SAVE CONFIG
+// =============================== */
+// function saveConfig(updates) {
+//   const current = loadConfig() || {};
+//   const merged  = { ...current, ...updates };
+//   fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2));
+// }
+
+// /* ===============================
+//    INIT MACHINE
+// =============================== */
+// async function initMachine() {
+//   try {
+//     let config = loadConfig();
+
+//     if (!config || !config.API_KEY || !config.MACHINE_ID) {
+//       try { fs.unlinkSync(CONFIG_FILE); } catch {}
+//       config = await registerMachine();
+//     }
+
+//     MACHINE_ID = config.MACHINE_ID;
+//     API_KEY    = config.API_KEY;
+
+//     if (config.API_BASE) {
+//       API_BASE = config.API_BASE;
+//     }
+
+//     console.log("✅ Machine Ready:", MACHINE_ID);
+//   } catch (err) {
+//     console.error("❌ Init failed:", err.message);
+//     process.exit(1);
+//   }
+// }
+
+// /* ===============================
+//    HEARTBEAT (unchanged except note)
+// =============================== */
+// function startHeartbeat() {
+//   async function beat() {
+//     try {
+//       const body = {
+//         cpu_usage: os.loadavg()[0],
+//         paper_level: 80, // TODO: replace with sensor later
+//         ink_level: 60,
+//         status: "ONLINE",
+//         printer: PRINTER_NAME || "NOT_DETECTED",
+//       };
+//       await axios.post(`${API_BASE}/kiosk/heartbeat`, body, {
+//         headers: getHeaders(body),
+//         timeout: 10000,
+//       });
+//       console.log("💓 Heartbeat sent");
+//     } catch (err) {
+//       console.log("❌ Heartbeat failed:", err.message);
+//     }
+//   }
+
+//   beat();
+//   setInterval(beat, HEARTBEAT_INTERVAL);
+// }
+
+// /* ===============================
+//    START
+// =============================== */
+// if (require.main === module) {
+//   (async () => {
+//     ensureDir();
+//     loadCache();
+//     await initMachine();
+//     await ensurePrinter();
+//     startHeartbeat();
+//     connectSocket();
+//     await startPoller();
+//     mainLoop();
+//   })();
+// } else {
+//   (async () => {
+//     ensureDir();
+//     loadCache();
+//     await initMachine();
+//     await ensurePrinter();
+//     startHeartbeat();
+//     connectSocket();
+//     await startPoller();
+//   })();
+// }
+
+// module.exports = { handleInput, getStatus };
+
+// // kioskCore.js — Laptop/Pi compatible — Option C (Hybrid: Socket + Disk Cache)
+// const axios        = require("axios");
+// const fs           = require("fs");
+// const path         = require("path");
+// const { exec }     = require("child_process");
+// const crypto       = require("crypto");
+// const os           = require("os");
+// const readline     = require("readline");
+// const { io: socketIO } = require("socket.io-client");
+
+// /* ===============================
+//    CONFIG
+// =============================== */
+// const FALLBACK_API_BASE  = "http://192.168.0.106:5000/api"; // ✅ used ONLY on very first boot
+// const CONFIG_FILE        = "./config.json";
+// const DOWNLOAD_DIR       = "./kiosk/files";
+// const CACHE_FILE         = "./kiosk/jobs.json";
+// const HEARTBEAT_INTERVAL = 30000;
+// const POLL_INTERVAL      = 30000;
+
+// /* ===============================
+//    LOAD API_BASE FROM CONFIG FIRST
+//    ✅ Runs before anything else so API_BASE is always correct
+//    from the very first line — no more localhost / wrong IP issue.
+//    Falls back to FALLBACK_API_BASE only on first ever boot
+//    when config.json does not exist yet.
+//    After first registration, API_BASE is saved in config.json
+//    and loaded automatically on every future boot.
+// =============================== */
+// function getApiBase() {
+//   try {
+//     if (fs.existsSync(CONFIG_FILE)) {
+//       const raw = fs.readFileSync(CONFIG_FILE, "utf-8").trim();
+//       if (raw) {
+//         const config = JSON.parse(raw);
+//         if (config.API_BASE) {
+//           console.log("🌐 API_BASE loaded from config:", config.API_BASE);
+//           return config.API_BASE;
+//         }
+//       }
+//     }
+//   } catch (err) {
+//     console.warn("⚠️  Could not read API_BASE from config, using fallback:", err.message);
+//   }
+//   console.log("🌐 API_BASE using fallback (first boot):", FALLBACK_API_BASE);
+//   return FALLBACK_API_BASE;
+// }
+
+// // ✅ API_BASE is set once here — correct on every boot automatically
+// let API_BASE = getApiBase();
+
+// /* ===============================
+//    GLOBALS
+// =============================== */
+// let MACHINE_ID   = null;
+// let API_KEY      = null;
+// let PRINTER_NAME = null;
+
+// let fileCache = {};
+
+// /* ===============================
+//    CACHE HELPERS  (disk-persisted)
+// =============================== */
+// function loadCache() {
+//   try {
+//     if (!fs.existsSync(CACHE_FILE)) return;
+//     const raw = fs.readFileSync(CACHE_FILE, "utf-8").trim();
+//     if (!raw) return;
+//     fileCache = JSON.parse(raw);
+//     const now = Date.now();
+//     for (const jobId of Object.keys(fileCache)) {
+//       if (fileCache[jobId].expires < now) {
+//         safeDelete(fileCache[jobId].filePath);
+//         delete fileCache[jobId];
+//       }
+//     }
+//     console.log(`📦 Cache loaded: ${Object.keys(fileCache).length} job(s)`);
+//   } catch (err) {
+//     console.error("Cache load error:", err.message);
+//     fileCache = {};
+//   }
+// }
+
+// function saveCache() {
+//   try {
+//     fs.writeFileSync(CACHE_FILE, JSON.stringify(fileCache, null, 2));
+//   } catch (err) {
+//     console.error("Cache save error:", err.message);
+//   }
+// }
+
+// function addToCache(jobId, filePath, expiresAt) {
+//   fileCache[jobId] = { filePath, expires: new Date(expiresAt).getTime() };
+//   saveCache();
+// }
+
+// function getFromCache(jobId) {
+//   const entry = fileCache[jobId];
+//   if (!entry) return null;
+//   if (entry.expires < Date.now()) {
+//     safeDelete(entry.filePath);
+//     delete fileCache[jobId];
+//     saveCache();
+//     return null;
+//   }
+//   return entry.filePath;
+// }
+
+// function removeFromCache(jobId) {
+//   delete fileCache[jobId];
+//   saveCache();
+// }
+
+// function safeDelete(filePath) {
+//   if (filePath && fs.existsSync(filePath)) {
+//     try { fs.unlinkSync(filePath); } catch {}
+//   }
+// }
+
+// /* ===============================
+//    ENSURE DIRS
+// =============================== */
+// function ensureDir() {
+//   [DOWNLOAD_DIR, path.dirname(CACHE_FILE)].forEach(dir => {
+//     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+//   });
+// }
+
+// /* ===============================
+//    DEVICE ID
+// =============================== */
+// function getDeviceId() {
+//   const interfaces = os.networkInterfaces();
+//   for (const name of Object.keys(interfaces)) {
+//     for (const iface of interfaces[name]) {
+//       if (!iface.internal && iface.mac && iface.mac !== "00:00:00:00:00:00") {
+//         return iface.mac;
+//       }
+//     }
+//   }
+//   // Fallback: use hostname if no valid MAC found
+//   return os.hostname();
+// }
+
+// /* ===============================
+//    REGISTER MACHINE
+//    MACHINE_ID is computed locally from MAC address.
+//    Server returns API_KEY + API_BASE.
+//    We merge MACHINE_ID into the saved config ourselves.
+// =============================== */
+// async function registerMachine() {
+//   console.log("🔄 Registering machine...");
+//   const deviceSerial = getDeviceId();
+//   console.log("🔑 Device serial (MAC):", deviceSerial);
+ 
+//   const res = await axios.post(`${API_BASE}/register-machine`, { deviceSerial });
+ 
+//   console.log("📡 Server registration response:", JSON.stringify(res.data));
+ 
+//   // ✅ MACHINE_ID must come from server (e.g. "MH1000"), not the MAC address
+//   const machineId = res.data.MACHINE_ID    // ← your server sends THIS
+//                || res.data.machine_id
+//                || res.data.machineId;
+ 
+//   if (!machineId) {
+//     // Log exactly what server sent so you can debug field name easily
+//     throw new Error(
+//       `Server did not return machine_id. Got keys: ${Object.keys(res.data).join(", ")}. ` +
+//       `Full response: ${JSON.stringify(res.data)}`
+//     );
+//   }
+ 
+//   const apiKey  = res.data.API_KEY  || res.data.api_key  || res.data.apiKey;
+//   const apiBase = res.data.API_BASE || res.data.api_base || res.data.apiBase || API_BASE;
+ 
+//   if (!apiKey) {
+//     throw new Error(
+//       `Server did not return API_KEY. Got keys: ${Object.keys(res.data).join(", ")}`
+//     );
+//   }
+ 
+//   const fullConfig = {
+//     MACHINE_ID:   machineId,    // ✅ "MH1000" from server — used in all API requests
+//     DEVICE_SERIAL: deviceSerial, // MAC address — saved for reference only
+//     API_KEY:      apiKey,
+//     API_BASE:     apiBase,
+//     PRINTER_NAME: null,          // filled later by ensurePrinter()
+//   };
+ 
+//   fs.writeFileSync(CONFIG_FILE, JSON.stringify(fullConfig, null, 2));
+//   console.log("✅ Machine registered — MACHINE_ID:", machineId);
+//   console.log("💾 Config saved to:", CONFIG_FILE);
+//   return fullConfig;
+// }
+
+// /* ===============================
+//    LOAD CONFIG
+// =============================== */
+// function loadConfig() {
+//   try {
+//     if (!fs.existsSync(CONFIG_FILE)) return null;
+//     const data = fs.readFileSync(CONFIG_FILE, "utf-8").trim();
+//     if (!data) return null;
+//     return JSON.parse(data);
+//   } catch {
+//     try { fs.unlinkSync(CONFIG_FILE); } catch {}
+//     return null;
+//   }
+// }
+
+// /* ===============================
+//    SAVE CONFIG HELPER
+//    Always merges — never loses existing fields.
+// =============================== */
+// function saveConfig(updates) {
+//   const current = loadConfig() || {};
+//   const merged  = { ...current, ...updates };
+//   fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2));
+// }
+
+// /* ===============================
+//    INIT MACHINE
+// =============================== */
+// async function initMachine() {
+//   try {
+//     let config = loadConfig();
+
+//     // Validate that config has ALL required fields; re-register if any are missing
+//     const isValid = config
+//       && config.API_KEY
+//       && config.MACHINE_ID;
+
+//     if (!isValid) {
+//       console.log("⚠️  Config missing or incomplete — re-registering...");
+//       try { fs.unlinkSync(CONFIG_FILE); } catch {}
+//       config = await registerMachine();
+//     }
+
+//     MACHINE_ID = config.MACHINE_ID;
+//     API_KEY    = config.API_KEY;
+
+//     // ✅ Confirm API_BASE in memory matches config (covers edge case of server IP change)
+//     if (config.API_BASE) {
+//       API_BASE = config.API_BASE;
+//       console.log("🌐 API_BASE confirmed from config:", API_BASE);
+//     }
+
+//     console.log("✅ Machine Ready:", MACHINE_ID);
+//   } catch (err) {
+//     console.error("❌ Init failed:", err.message);
+//     process.exit(1);
+//   }
+// }
+
+// /* ===============================
+//    SECURITY — SIGN REQUEST
+// =============================== */
+// function signRequest(body) {
+//   const timestamp  = Date.now().toString();
+//   const bodyString = JSON.stringify(body || {});
+//   const signature  = crypto
+//     .createHmac("sha256", API_KEY)
+//     .update(MACHINE_ID + timestamp + bodyString)
+//     .digest("hex");
+//   return { timestamp, signature };
+// }
+
+// function getHeaders(body) {
+//   const auth = signRequest(body);
+//   return {
+//     "X-Machine-Id": MACHINE_ID,
+//     "X-Api-Key":    API_KEY,
+//     "X-Timestamp":  auth.timestamp,
+//     "X-Signature":  auth.signature,
+//   };
+// }
+
+// /* ===============================
+//    PRINTER DETECTION
+// =============================== */
+// function detectPrinter() {
+//   return new Promise((resolve, reject) => {
+//     exec("lpstat -p", (err, stdout) => {
+//       if (err) return reject(err);
+//       const match = stdout.match(/printer\s+(\S+)/);
+//       if (match) return resolve(match[1]);
+//       reject(new Error("No printer found in lpstat output"));
+//     });
+//   });
+// }
+
+// /* ===============================
+//    ENSURE PRINTER
+//    Uses saveConfig() so PRINTER_NAME is merged into existing
+//    config without overwriting any other fields.
+// =============================== */
+// async function ensurePrinter() {
+//   const config = loadConfig();
+
+//   // If printer already saved in config, use it
+//   if (config?.PRINTER_NAME) {
+//     PRINTER_NAME = config.PRINTER_NAME;
+//     console.log("✅ Printer loaded from config:", PRINTER_NAME);
+//     return;
+//   }
+
+//   try {
+//     PRINTER_NAME = await detectPrinter();
+//     console.log("✅ Printer detected:", PRINTER_NAME);
+
+//     // saveConfig() merges — preserves all other config fields
+//     saveConfig({ PRINTER_NAME });
+//     console.log("💾 Printer name saved to config");
+//   } catch (err) {
+//     console.log("⚠️  No printer detected:", err.message);
+//     console.log("🔄 Retrying printer detection in 5s...");
+//     setTimeout(ensurePrinter, 5000);
+//   }
+// }
+
+// /* ===============================
+//    DOWNLOAD FILE
+// =============================== */
+// async function downloadFile(fileUrl, jobId = null) {
+//   let url;
+
+//   if (fileUrl.startsWith("http")) {
+//     url = fileUrl;
+//   } else {
+//     const filename = fileUrl.includes("\\")
+//       ? fileUrl.split("\\").pop()
+//       : fileUrl.split("/").pop();
+//     url = `${API_BASE.replace("/api", "")}/uploads/${filename}`;
+//   }
+
+//   console.log("⬇️  Downloading from URL:", url);
+
+//   const filename = jobId ? `${jobId}.pdf` : `${Date.now()}.pdf`;
+//   const filePath = path.join(DOWNLOAD_DIR, filename);
+
+//   const response = await axios({
+//     url,
+//     method:       "GET",
+//     responseType: "arraybuffer",
+//     timeout:      30000,   // 30s timeout — important for slow Pi connections
+//   });
+
+//   fs.writeFileSync(filePath, Buffer.from(response.data));
+//   console.log("✅ File written to:", filePath);
+
+//   return filePath;
+// }
+
+// /* ===============================
+//    PRE-FETCH
+// =============================== */
+// async function preFetchJob(jobId, filePath, expiresAt) {
+//   const cached = getFromCache(jobId);
+//   if (cached && fs.existsSync(cached)) {
+//     console.log(`📦 Already cached: ${jobId}`);
+//     return;
+//   }
+
+//   try {
+//     console.log(`⬇️  Pre-fetching: ${jobId}`);
+//     const localPath = await downloadFile(filePath, jobId);
+//     addToCache(jobId, localPath, expiresAt);
+//     console.log(`✅ Cached: ${jobId} → ${localPath}`);
+//   } catch (err) {
+//     console.error(`❌ Pre-fetch failed for ${jobId}:`, err.message);
+//   }
+// }
+
+// /* ===============================
+//    SOCKET
+// =============================== */
+// function connectSocket() {
+//   const serverBase = API_BASE.replace("/api", "");
+//   const socket = socketIO(serverBase, {
+//     reconnection:         true,
+//     reconnectionDelay:    3000,
+//     reconnectionDelayMax: 10000,
+//   });
+
+//   socket.on("connect", () => {
+//     console.log("🔌 Socket connected to", serverBase);
+//     if (typeof global.onSocketStatus === "function") {
+//       global.onSocketStatus("connected");
+//     }
+//   });
+
+//   socket.on("payment_success", ({ jobId, machineId, filePath }) => {
+//     if (machineId !== MACHINE_ID) return;
+//     const expiresAt = Date.now() + 5 * 60 * 1000;
+//     console.log(`💳 Payment received for ${jobId} — pre-fetching...`);
+//     preFetchJob(jobId, filePath, expiresAt);
+//   });
+
+//   socket.on("disconnect", (reason) => {
+//     console.log("🔌 Socket disconnected:", reason);
+//     if (typeof global.onSocketStatus === "function") {
+//       global.onSocketStatus("disconnected");
+//     }
+//   });
+
+//   socket.on("connect_error", (err) => {
+//     console.log("🔌 Socket connect error:", err.message);
+//   });
+// }
+
+// /* ===============================
+//    POLLER
+// =============================== */
+// async function startPoller() {
+//   async function poll() {
+//     try {
+//       const body = {};
+//       const res = await axios.get(`${API_BASE}/kiosk/pending-jobs`, {
+//         headers: getHeaders(body),
+//         timeout: 15000,
+//       });
+
+//       const { jobs } = res.data;
+//       if (jobs.length > 0) {
+//         console.log(`🔍 Poller found ${jobs.length} pending job(s)`);
+//       }
+
+//       for (const job of jobs) {
+//         const expiresAt = Date.now() + 5 * 60 * 1000;
+//         await preFetchJob(job.job_id, job.file_path, expiresAt);
+//       }
+//     } catch (err) {
+//       console.log("🔍 Poller error:", err.response?.data?.error || err.message);
+//     }
+//   }
+
+//   await poll();
+//   setInterval(poll, POLL_INTERVAL);
+// }
+
+// /* ===============================
+//    PRINT FILE — cross-platform
+//    Windows → SumatraPDF (silent print)
+//    Linux/Mac → CUPS lp command
+// =============================== */
+// function printFile(filePath, job) {
+//   if (!PRINTER_NAME) throw new Error("Printer not ready — still detecting");
+
+//   const copies    = job.copies || 1;
+//   const isWindows = process.platform === "win32";
+
+//   let command;
+
+//   if (isWindows) {
+//     const sumatraPath   = `C:\\Program Files\\SumatraPDF\\SumatraPDF.exe`;
+//     const sumatraPath86 = `C:\\Program Files (x86)\\SumatraPDF\\SumatraPDF.exe`;
+
+//     const sumatra = fs.existsSync(sumatraPath)
+//       ? sumatraPath
+//       : fs.existsSync(sumatraPath86)
+//         ? sumatraPath86
+//         : null;
+
+//     if (sumatra) {
+//       const duplexSetting = job.printSide === "duplex" ? ",duplexlong" : "";
+//       const colorSetting  = job.color     === "bw"     ? ",monochrome" : ",color";
+//       const printSettings = `${copies}x${duplexSetting}${colorSetting}`;
+//       command = `"${sumatra}" -print-to "${PRINTER_NAME}" -print-settings "${printSettings}" -silent "${filePath}"`;
+//     } else {
+//       console.warn("⚠️  SumatraPDF not found — using Windows built-in fallback");
+//       const adobePath = `C:\\Program Files (x86)\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe`;
+//       command = fs.existsSync(adobePath)
+//         ? `"${adobePath}" /t "${filePath}" "${PRINTER_NAME}"`
+//         : `rundll32 mshtml.dll,PrintHTML "${filePath}"`;
+//     }
+
+//   } else {
+//     // ── LINUX / MAC (Raspberry Pi) — CUPS ─────────────────────
+//     const sides = job.printSide === "duplex"
+//       ? "-o sides=two-sided-long-edge"
+//       : "-o sides=one-sided";
+//     const color = job.color     === "bw"  ? "-o ColorModel=Gray" : "";
+//     const media = job.paperSize === "A3"  ? "-o media=A3"        : "-o media=A4";
+
+//     command = [
+//       "lp",
+//       `-d "${PRINTER_NAME}"`,
+//       `-n ${copies}`,
+//       sides,
+//       color,
+//       media,
+//       `"${filePath}"`,
+//     ].filter(Boolean).join(" ");
+//   }
+
+//   console.log("🖨 Print command:", command);
+
+//   return new Promise((resolve, reject) => {
+//     exec(command, (err, stdout, stderr) => {
+//       if (err) {
+//         console.error("🖨 Print exec error:", err.message);
+//         return reject(err);
+//       }
+//       if (stderr) console.log("🖨 Print stderr:", stderr);
+//       console.log("🖨 Print stdout:", stdout);
+//       resolve(stdout);
+//     });
+//   });
+// }
+
+// /* ===============================
+//    HEARTBEAT
+// =============================== */
+// function startHeartbeat() {
+//   async function beat() {
+//     try {
+//       const body = {
+//         cpu_usage:   os.loadavg()[0],
+//         paper_level: 80,
+//         ink_level:   60,
+//         status:      "ONLINE",
+//         printer:     PRINTER_NAME || "NOT_DETECTED",
+//       };
+//       await axios.post(`${API_BASE}/kiosk/heartbeat`, body, {
+//         headers: getHeaders(body),
+//         timeout: 10000,
+//       });
+//       console.log("💓 Heartbeat sent");
+//     } catch (err) {
+//       console.log("❌ Heartbeat failed:", err.response?.data || err.message);
+//     }
+//   }
+
+//   beat(); // send one immediately on start
+//   setInterval(beat, HEARTBEAT_INTERVAL);
+// }
+
+// /* ===============================
+//    INPUT PARSER
+// =============================== */
+// function isOtp(input)     { return /^\d{4}$/.test(input); }
+// function isQrToken(input) { return /^[a-f0-9]{64}$/i.test(input); }
+
+// function parseInput(input) {
+//   input = input.trim();
+//   if (input.startsWith("PRINTJOB:")) {
+//     const token = input.replace("PRINTJOB:", "").trim();
+//     if (isQrToken(token)) return { qrToken: token };
+//   }
+//   if (isOtp(input))     return { otp: input };
+//   if (isQrToken(input)) return { qrToken: input };
+//   return null;
+// }
+
+// /* ===============================
+//    MAIN PRINT FLOW  ← exported for Electron
+// =============================== */
+// async function handleInput(input) {
+//   console.log("📥 Input received:", JSON.stringify(input));
+
+//   const payload = parseInput(input);
+//   if (!payload) {
+//     console.log("❌ Invalid format — OTP must be exactly 4 digits or a 64-char QR token");
+//     return "❌ Invalid OTP (must be 4 digits)";
+//   }
+
+//   console.log("📤 Parsed payload:", payload);
+
+//   let localFilePath = null;
+//   let jobId         = null;
+
+//   try {
+//     // STEP 1 — Verify OTP/QR with server
+//     console.log("🔐 Sending unlock request to server...");
+//     const unlockRes = await axios.post(
+//       `${API_BASE}/kiosk/unlock`,
+//       payload,
+//       {
+//         headers: getHeaders(payload),
+//         timeout: 15000,
+//       }
+//     );
+//     const job = unlockRes.data;
+//     jobId = job.jobId;
+//     console.log("🔓 Job unlocked:", jobId, "| Details:", JSON.stringify(job));
+
+//     // STEP 2 — Use cached file or download
+//     const cached = getFromCache(jobId);
+//     if (cached && fs.existsSync(cached)) {
+//       localFilePath = cached;
+//       console.log("⚡ Using pre-cached file:", localFilePath);
+//     } else {
+//       console.log("⬇️  Cache miss — downloading now...");
+//       localFilePath = await downloadFile(job.filePath, jobId);
+//       console.log("✅ Downloaded to:", localFilePath);
+//     }
+
+//     if (!fs.existsSync(localFilePath)) {
+//       throw new Error(`File not found at: ${localFilePath}`);
+//     }
+//     console.log("📄 File ready, size:", fs.statSync(localFilePath).size, "bytes");
+
+//     // STEP 3 — Print
+//     console.log("🖨 Starting print...");
+//     await printFile(localFilePath, job);
+//     console.log("🖨 Print job sent successfully");
+
+//     // STEP 4 — Mark printed on server
+//     const markBody = { jobId };
+//     await axios.post(`${API_BASE}/kiosk/mark-printed`, markBody, {
+//       headers: getHeaders(markBody),
+//       timeout: 10000,
+//     });
+
+//     console.log("✅ All done:", jobId);
+//     return "✅ Printed Successfully";
+
+//   } catch (err) {
+//     console.error("❌ HANDLE INPUT ERROR:");
+//     console.error("   HTTP status :", err.response?.status);
+//     console.error("   Server msg  :", JSON.stringify(err.response?.data));
+//     console.error("   Local msg   :", err.message);
+
+//     if (jobId) {
+//       try {
+//         const failBody = { jobId };
+//         await axios.post(`${API_BASE}/kiosk/mark-failed`, failBody, {
+//           headers: getHeaders(failBody),
+//           timeout: 10000,
+//         });
+//         console.log("⚠️  Job marked FAILED on server");
+//       } catch (markErr) {
+//         console.error("❌ Could not mark job failed:", markErr.message);
+//       }
+//     }
+
+//     const msg = err.response?.data?.error || err.message || "Unknown error";
+//     return `❌ ${msg}`;
+
+//   } finally {
+//     // ✅ Always runs — file deleted whether print succeeded or failed
+//     if (jobId) removeFromCache(jobId);
+//     if (localFilePath && fs.existsSync(localFilePath)) {
+//       try { fs.unlinkSync(localFilePath); console.log("🗑️  Local file deleted"); } catch {}
+//     }
+//   }
+// }
+
+// /* ===============================
+//    STATUS — exported for Electron
+//    Lets renderer check machine/printer health
+// =============================== */
+// function getStatus() {
+//   return {
+//     machineId:    MACHINE_ID,
+//     apiBase:      API_BASE,
+//     printer:      PRINTER_NAME || null,
+//     printerReady: !!PRINTER_NAME,
+//     cacheSize:    Object.keys(fileCache).length,
+//   };
+// }
+
+// /* ===============================
+//    MAIN LOOP  (CLI only)
+// =============================== */
+// async function mainLoop() {
+//   const rl = readline.createInterface({
+//     input:  process.stdin,
+//     output: process.stdout,
+//   });
+
+//   function ask(q) {
+//     return new Promise((resolve) => rl.question(q, resolve));
+//   }
+
+//   console.log("\n📟 Ready — enter OTP or scan QR code\n");
+
+//   while (true) {
+//     try {
+//       const input = await ask("OTP / QR > ");
+//       if (!input.trim()) continue;
+//       const result = await handleInput(input.trim());
+//       console.log("→", result, "\n");
+//     } catch (err) {
+//       console.log("❌ Loop error:", err.message);
+//     }
+//   }
+// }
+
+// /* ===============================
+//    START  (only when run directly)
+// =============================== */
+// if (require.main === module) {
+//   (async () => {
+//     ensureDir();
+//     loadCache();
+//     await initMachine();
+//     await ensurePrinter();
+//     startHeartbeat();
+//     connectSocket();
+//     await startPoller();
+//     mainLoop();
+//   })();
+// } else {
+//   // ✅ Required as a module by Electron — boot everything except mainLoop
+//   (async () => {
+//     ensureDir();
+//     loadCache();
+//     await initMachine();
+//     await ensurePrinter();
+//     startHeartbeat();
+//     connectSocket();
+//     await startPoller();
+//   })();
+// }
+
+// // ✅ Exports for Electron preload
+// module.exports = { handleInput, getStatus };
 //---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // const axios = require("axios");
 // const { print } = require("pdf-to-printer");

@@ -26,15 +26,26 @@ const razorpay = new Razorpay({
 
 /* ---------------- MIDDLEWARE ---------------- */
 // app.use(cors({
-//   origin: process.env.FRONTEND_URL || 'http://192.168.0.106:5000/api',
+//   origin: process.env.FRONTEND_URL || 'http://192.168.0.104:5000/api',
 //   methods: ['GET', 'POST', 'PATCH'],
 //   allowedHeaders: ['Content-Type'],
 // }));
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',   // set FRONTEND_URL in Railway env vars
+  origin: "*",
   methods: ['GET', 'POST', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'x-machine-id', 'x-timestamp', 'x-signature', 'x-api-key'],
+  allowedHeaders: [
+    'Content-Type',
+    'x-machine-id',
+    'x-timestamp',
+    'x-signature',
+    'x-api-key'
+  ],
 }));
+// app.use(cors({
+//   origin: process.env.FRONTEND_URL || '*',   // set FRONTEND_URL in Railway env vars
+//   methods: ['GET', 'POST', 'PATCH'],
+//   allowedHeaders: ['Content-Type', 'x-machine-id', 'x-timestamp', 'x-signature', 'x-api-key'],
+// }));
 app.use(express.json());
 // Add this line after app.use(express.json())
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
@@ -709,6 +720,72 @@ app.get("/api/kiosk/pending-jobs", verifyMachine, async (req, res) => {
 /* =========================================================
    REGISTER MACHINE
 ========================================================= */
+// app.post("/api/register-machine", async (req, res) => {
+
+//   try {
+//     const { deviceSerial } = req.body;
+
+//     if (!deviceSerial) {
+//       return res.status(400).json({ error: "Device serial required" });
+//     }
+
+//     const [[existing]] = await db.query(
+//       `SELECT * FROM machines WHERE device_serial=?`, [deviceSerial]
+//     );
+
+//     // ✅ Re-registration: rotate API key for existing machine
+//     if (existing) {
+//       const apiKey = crypto.randomBytes(32).toString("hex");
+//       const hash   = await bcrypt.hash(apiKey, 10);
+
+//       await db.query(
+//         `UPDATE machines SET api_key_hash=? WHERE machine_id=?`,
+//         [hash, existing.machine_id]
+//       );
+
+//       return res.json({
+//         MACHINE_ID: existing.machine_id,   // ✅ fixed key name
+//         API_KEY:    apiKey,
+//         // API_BASE:   "http://192.168.0.106:5000/api",  // ✅ colon not equals  "http://localhost:5000/api"
+//         API_BASE: process.env.API_BASE_URL || "http://192.168.0.104:5000/api"
+
+//       });
+//     }
+
+//     // New machine — find an unassigned PENDING slot
+//     const [[machine]] = await db.query(
+//       `SELECT * FROM machines WHERE assigned=FALSE AND status='PENDING' LIMIT 1`
+//     );
+
+//     if (!machine) {
+//       return res.status(400).json({
+//         error: "No available machines. Create from admin panel first.",
+//       });
+//     }
+
+//     const apiKey = crypto.randomBytes(32).toString("hex");
+//     const hash   = await bcrypt.hash(apiKey, 10);
+
+//     await db.query(
+//       `UPDATE machines
+//        SET assigned=TRUE, status='ACTIVE', device_serial=?, api_key_hash=?, last_seen=NOW()
+//        WHERE machine_id=?`,
+//       [deviceSerial, hash, machine.machine_id]
+//     );
+
+//     res.json({
+//       MACHINE_ID: machine.machine_id,
+//       API_KEY:    apiKey,
+//       // API_BASE:   "http://192.168.0.106:5000/api",  // ✅ colon not equals   "http://localhost:5000/api"
+//       API_BASE: process.env.API_BASE_URL ||"http://192.168.0.104:5000/api"
+//     });
+
+//   } catch (err) {
+//     console.error("REGISTER ERROR:", err);
+//     res.status(500).json({ error: "Registration failed" });
+//   }
+// });
+
 app.post("/api/register-machine", async (req, res) => {
   try {
     const { deviceSerial } = req.body;
@@ -717,11 +794,15 @@ app.post("/api/register-machine", async (req, res) => {
       return res.status(400).json({ error: "Device serial required" });
     }
 
+    // ✅ ALWAYS use LAN IP — NEVER localhost
+    // const API_BASE = process.env.API_BASE_URL || "http://192.168.0.104:5000/api";
+    const API_BASE = process.env.API_BASE_URL
+
     const [[existing]] = await db.query(
       `SELECT * FROM machines WHERE device_serial=?`, [deviceSerial]
     );
 
-    // ✅ Re-registration: rotate API key for existing machine
+    // ✅ Existing machine → rotate API key
     if (existing) {
       const apiKey = crypto.randomBytes(32).toString("hex");
       const hash   = await bcrypt.hash(apiKey, 10);
@@ -732,15 +813,13 @@ app.post("/api/register-machine", async (req, res) => {
       );
 
       return res.json({
-        MACHINE_ID: existing.machine_id,   // ✅ fixed key name
-        API_KEY:    apiKey,
-        // API_BASE:   "http://192.168.0.106:5000/api",  // ✅ colon not equals
-        API_BASE: process.env.API_BASE_URL || "http://localhost:5000/api"
-
+        MACHINE_ID: existing.machine_id,
+        API_KEY: apiKey,
+        API_BASE: API_BASE   // ✅ FIXED
       });
     }
 
-    // New machine — find an unassigned PENDING slot
+    // ✅ Assign new machine
     const [[machine]] = await db.query(
       `SELECT * FROM machines WHERE assigned=FALSE AND status='PENDING' LIMIT 1`
     );
@@ -763,9 +842,8 @@ app.post("/api/register-machine", async (req, res) => {
 
     res.json({
       MACHINE_ID: machine.machine_id,
-      API_KEY:    apiKey,
-      // API_BASE:   "http://192.168.0.106:5000/api",  // ✅ colon not equals
-      API_BASE: process.env.API_BASE_URL || "http://localhost:5000/api"
+      API_KEY: apiKey,
+      API_BASE: API_BASE   // ✅ FIXED
     });
 
   } catch (err) {
@@ -773,7 +851,6 @@ app.post("/api/register-machine", async (req, res) => {
     res.status(500).json({ error: "Registration failed" });
   }
 });
-
 /* =========================================================
    CLEANUP CRON
 ========================================================= */
