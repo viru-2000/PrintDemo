@@ -198,23 +198,32 @@ app.get("/health", (req, res) => {
    MACHINE STATUS
 ========================================================= */
 app.get("/api/machines/:machineId/status", async (req, res) => {
-  try {
-    const { machineId } = req.params;
+  const { machineId } = req.params;
 
-    const machineResult = await db.query(
+  // ── Step 1: fetch machine row ──────────────────────────
+  let machine = null;
+  try {
+    const [rows] = await db.query(
       `SELECT machine_id, is_print_locked, last_seen
        FROM machines WHERE machine_id=?`,
       [machineId]
     );
+    machine = rows && rows.length ? rows[0] : null;
+  } catch (err) {
+    console.error("❌ STATUS — machines query failed:", err.message);
+    return res.status(500).json({ error: "DB error fetching machine" });
+  }
 
-    const machineRows = machineResult[0] || [];
-    const machine = machineRows.length ? machineRows[0] : null;
+  if (!machine) {
+    return res.status(404).json({ error: "Machine not found" });
+  }
 
-    if (!machine) {
-      return res.status(404).json({ error: "Machine not found" });
-    }
+  // ── Step 2: fetch latest heartbeat (table may not exist yet — safe fallback) ──
+  let isOnline   = false;
+  let paperLevel = null;
 
-    const heartbeatResult = await db.query(
+  try {
+    const [hbRows] = await db.query(
       `SELECT paper_level, created_at
        FROM machine_heartbeat_logs
        WHERE machine_id=?
@@ -223,30 +232,28 @@ app.get("/api/machines/:machineId/status", async (req, res) => {
       [machineId]
     );
 
-    const heartbeatRows = heartbeatResult[0] || [];
-
-    let isOnline = false;
-    let paperLevel = null;
-
-    if (Array.isArray(heartbeatRows) && heartbeatRows.length > 0) {
-      const lastPing = new Date(heartbeatRows[0].created_at);
+    if (hbRows && hbRows.length > 0) {
+      const lastPing = new Date(hbRows[0].created_at);
       if (!isNaN(lastPing.getTime())) {
-        const diff = (Date.now() - lastPing.getTime()) / 1000;
-        isOnline = diff < 120;
+        isOnline = (Date.now() - lastPing.getTime()) / 1000 < 120;
       }
-      paperLevel = heartbeatRows[0].paper_level ?? null;
+      paperLevel = hbRows[0].paper_level ?? null;
     }
-
-    return res.json({
-      machine_id:      machine.machine_id,
-      is_online:       isOnline,
-      paper_level:     paperLevel,
-      is_print_locked: machine.is_print_locked,
-    });
   } catch (err) {
-    console.error("❌ STATUS API ERROR:", err.stack || err);
-    return res.status(500).json({ error: "Internal Server Error" });
+    // ✅ Heartbeat table missing or query failed — not fatal, just means offline
+    // This is the most common cause of 502 on a fresh deployment
+    console.warn("⚠️ STATUS — heartbeat query failed (table may not exist yet):", err.message);
+    isOnline   = false;
+    paperLevel = null;
   }
+
+  // ── Step 3: always respond — never let Railway see an unhandled rejection ──
+  return res.json({
+    machine_id:      machine.machine_id,
+    is_online:       isOnline,
+    paper_level:     paperLevel,
+    is_print_locked: machine.is_print_locked,
+  });
 });
 
 /* =========================================================
@@ -826,7 +833,6 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`✅ API_BASE: ${SERVER_API_BASE}`);
 });
-
 
 
 // require("dotenv").config({ path: "./payment.env" });

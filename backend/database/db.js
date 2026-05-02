@@ -23,7 +23,6 @@
 // });
 
 // module.exports = db;
-
 const mysql = require("mysql2/promise"); // ✅ was missing in your snippet
 
 const db = mysql.createPool({
@@ -32,10 +31,18 @@ const db = mysql.createPool({
   password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD,
   database: process.env.DB_NAME     || process.env.MYSQLDATABASE,
   port:     parseInt(process.env.DB_PORT || process.env.MYSQLPORT || "3306"),
-  ssl:      { rejectUnauthorized: false },
+  ssl: { rejectUnauthorized: false },
+
   waitForConnections: true,
   connectionLimit:    10,
-  connectTimeout:     30000,
+
+  // ✅ FIXED: connectTimeout is not a valid mysql2 pool option
+  // acquireTimeout controls how long to wait for a free connection from the pool
+  acquireTimeout: 30000,
+
+  // ✅ Prevents Railway from dropping idle connections
+  enableKeepAlive:       true,
+  keepAliveInitialDelay: 0,
 });
 
 // Test connection on startup
@@ -54,5 +61,4 @@ const db = mysql.createPool({
 })();
 
 module.exports = db;
-
 // mysql://root:ruxfBOwHLuhmlTpJtQuRpDVgxBArrRUw@interchange.proxy.rlwy.net:19751/railway
