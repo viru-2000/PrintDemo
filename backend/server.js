@@ -13,7 +13,7 @@ const bcrypt      = require("bcrypt");
 const http        = require("http");
 
 const db          = require("./database/db");
-// const { getIO, initSocket } = require("./server/socket");
+const { getIO, initSocket } = require("./server/socket");
 
 const adminRoutes = require("./routes/admin.routes");
 
@@ -43,7 +43,7 @@ if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
 const SERVER_API_BASE = process.env.API_BASE_URL || "https://print-production-524d.up.railway.app/api";
 
 /* ── SOCKET.IO ── */
-// initSocket(server);
+initSocket(server);
 
 app.use((req, res, next) => {
   console.log("🌐 Incoming:", req.method, req.url);
