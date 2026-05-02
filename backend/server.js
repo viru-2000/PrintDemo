@@ -31,7 +31,11 @@ const razorpay = new Razorpay({
 //   allowedHeaders: ['Content-Type'],
 // }));
 app.use(cors({
-  origin: "*",
+  // origin: "*",
+  origin: [
+    "https://print-kappa-sepia.vercel.app",
+    "https://print-qov1z4o8v-bhu3203298s007-9747s-projects.vercel.app"
+  ],
   methods: ['GET', 'POST', 'PATCH'],
   allowedHeaders: [
     'Content-Type',
