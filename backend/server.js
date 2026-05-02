@@ -224,6 +224,52 @@ app.get("/health", (req, res) => {
 /* =========================================================
    MACHINE STATUS
 ========================================================= */
+// app.get("/api/machines/:machineId/status", async (req, res) => {
+//   try {
+//     const { machineId } = req.params;
+
+//     const [[machine]] = await db.query(
+//       `SELECT machine_id, is_print_locked, last_seen
+//        FROM machines WHERE machine_id=?`,
+//       [machineId]
+//     );
+
+//     if (!machine) {
+//       return res.status(404).json({ error: "Machine not found" });
+//     }
+
+//     const [heartbeat] = await db.query(
+//       `SELECT paper_level, created_at
+//        FROM machine_heartbeat_logs
+//        WHERE machine_id=?
+//        ORDER BY created_at DESC
+//        LIMIT 1`,
+//       [machineId]
+//     );
+
+//     let isOnline   = false;
+//     let paperLevel = null;
+
+//     if (heartbeat.length > 0) {
+//       const lastPing = new Date(heartbeat[0].created_at);
+//       const diff = (Date.now() - lastPing.getTime()) / 1000;
+//       isOnline   = diff < 120;
+//       paperLevel = heartbeat[0].paper_level;
+//     }
+
+//     res.json({
+//       machine_id:      machine.machine_id,
+//       is_online:       isOnline,
+//       paper_level:     paperLevel,
+//       is_print_locked: machine.is_print_locked,
+//     });
+
+//   } catch (err) {
+//     console.error("MACHINE STATUS ERROR:", err);
+//     res.status(500).json({ error: "Internal error" });
+//   }
+// });
+
 app.get("/api/machines/:machineId/status", async (req, res) => {
   try {
     const { machineId } = req.params;
@@ -238,38 +284,13 @@ app.get("/api/machines/:machineId/status", async (req, res) => {
       return res.status(404).json({ error: "Machine not found" });
     }
 
-    const [heartbeat] = await db.query(
-      `SELECT paper_level, created_at
-       FROM machine_heartbeat_logs
-       WHERE machine_id=?
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [machineId]
-    );
-
-    let isOnline   = false;
-    let paperLevel = null;
-
-    if (heartbeat.length > 0) {
-      const lastPing = new Date(heartbeat[0].created_at);
-      const diff = (Date.now() - lastPing.getTime()) / 1000;
-      isOnline   = diff < 120;
-      paperLevel = heartbeat[0].paper_level;
-    }
-
-    res.json({
-      machine_id:      machine.machine_id,
-      is_online:       isOnline,
-      paper_level:     paperLevel,
-      is_print_locked: machine.is_print_locked,
-    });
+    res.json(machine);
 
   } catch (err) {
-    console.error("MACHINE STATUS ERROR:", err);
-    res.status(500).json({ error: "Internal error" });
+    console.error("❌ STATUS ERROR:", err);
+    res.status(500).json({ error: err.message });
   }
 });
-
 /* =========================================================
    HEARTBEAT
 ========================================================= */
