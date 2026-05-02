@@ -31,33 +31,60 @@ const SERVER_API_BASE = process.env.API_BASE_URL || "https://print-production-52
 //   1. Your main Vercel production domain
 //   2. Any Vercel preview deployment (*.vercel.app)
 //   3. localhost for local dev
+// app.use(cors({
+//   origin: (origin, callback) => {
+//     // Allow requests with no origin (mobile apps, Postman, curl, Pi kiosk)
+//     if (!origin) return callback(null, true);
+
+//     const allowed = [
+//       // Production frontend
+//       "https://print-kappa-sepia.vercel.app",
+//       // Any Vercel preview URL for this project
+//       /^https:\/\/print-.*\.vercel\.app$/,
+//       // Local development
+//       /^http:\/\/localhost:\d+$/,
+//       /^http:\/\/192\.168\.\d+\.\d+:\d+$/,
+//     ];
+
+//     const isAllowed = allowed.some(pattern =>
+//       typeof pattern === "string"
+//         ? pattern === origin
+//         : pattern.test(origin)
+//     );
+
+//     if (isAllowed) {
+//       callback(null, true);
+//     } else {
+//       console.warn("CORS blocked origin:", origin);
+//       callback(new Error("Not allowed by CORS"));
+//     }
+//   },
+//   methods: ["GET", "POST", "PATCH", "OPTIONS"],
+//   allowedHeaders: [
+//     "Content-Type",
+//     "x-machine-id",
+//     "x-timestamp",
+//     "x-signature",
+//     "x-api-key",
+//   ],
+//   credentials: true,
+// }));
+
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, curl, Pi kiosk)
+    // Allow no-origin requests (Pi kiosk, Postman, mobile apps)
     if (!origin) return callback(null, true);
 
-    const allowed = [
-      // Production frontend
-      "https://print-kappa-sepia.vercel.app",
-      // Any Vercel preview URL for this project
-      /^https:\/\/print-.*\.vercel\.app$/,
-      // Local development
-      /^http:\/\/localhost:\d+$/,
-      /^http:\/\/192\.168\.\d+\.\d+:\d+$/,
-    ];
+    const allowed =
+      !origin ||                                        // no origin = Pi/curl
+      origin.endsWith(".vercel.app") ||                 // ✅ ALL Vercel previews
+      origin === "https://print-kappa-sepia.vercel.app" || // production
+      /^http:\/\/localhost:\d+$/.test(origin) ||        // local dev
+      /^http:\/\/192\.168\.\d+\.\d+:\d+$/.test(origin); // LAN dev
 
-    const isAllowed = allowed.some(pattern =>
-      typeof pattern === "string"
-        ? pattern === origin
-        : pattern.test(origin)
-    );
-
-    if (isAllowed) {
-      callback(null, true);
-    } else {
-      console.warn("CORS blocked origin:", origin);
-      callback(new Error("Not allowed by CORS"));
-    }
+    if (allowed) return callback(null, true);
+    console.warn("CORS blocked:", origin);
+    callback(new Error("Not allowed by CORS"));
   },
   methods: ["GET", "POST", "PATCH", "OPTIONS"],
   allowedHeaders: [
