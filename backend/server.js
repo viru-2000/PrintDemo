@@ -16,6 +16,14 @@ const adminRoutes    = require("./routes/admin.routes");
 
 const app = express();
 
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT EXCEPTION:", err);
+});
+
+process.on("unhandledRejection", (err) => {
+  console.error("UNHANDLED REJECTION:", err);
+});
+
 /* ---------------- CONFIG ---------------- */
 const razorpay = new Razorpay({
   key_id:     process.env.RAZORPAY_KEY_ID,
@@ -274,20 +282,21 @@ app.get("/api/machines/:machineId/status", async (req, res) => {
   try {
     const { machineId } = req.params;
 
-    const result = await db.query(
+    // MACHINE QUERY
+    const machineResult = await db.query(
       `SELECT machine_id, is_print_locked, last_seen
        FROM machines WHERE machine_id=?`,
       [machineId]
     );
 
-    const rows = result[0];
-    const machine = rows.length ? rows[0] : null;
+    const machineRows = machineResult[0] || [];
+    const machine = machineRows.length ? machineRows[0] : null;
 
     if (!machine) {
       return res.status(404).json({ error: "Machine not found" });
     }
 
-    // SAFE heartbeat query
+    // HEARTBEAT QUERY
     const heartbeatResult = await db.query(
       `SELECT paper_level, created_at
        FROM machine_heartbeat_logs
@@ -297,20 +306,23 @@ app.get("/api/machines/:machineId/status", async (req, res) => {
       [machineId]
     );
 
-    const heartbeatRows = heartbeatResult[0];
+    const heartbeatRows = heartbeatResult[0] || [];
 
     let isOnline = false;
     let paperLevel = null;
 
-    if (heartbeatRows.length > 0) {
+    if (Array.isArray(heartbeatRows) && heartbeatRows.length > 0) {
       const lastPing = new Date(heartbeatRows[0].created_at);
-      const diff = (Date.now() - lastPing.getTime()) / 1000;
 
-      isOnline = diff < 120;
-      paperLevel = heartbeatRows[0].paper_level;
+      if (!isNaN(lastPing.getTime())) {
+        const diff = (Date.now() - lastPing.getTime()) / 1000;
+        isOnline = diff < 120;
+      }
+
+      paperLevel = heartbeatRows[0].paper_level ?? null;
     }
 
-    res.json({
+    return res.json({
       machine_id: machine.machine_id,
       is_online: isOnline,
       paper_level: paperLevel,
@@ -318,8 +330,8 @@ app.get("/api/machines/:machineId/status", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("❌ STATUS API ERROR:", err);
-    res.status(500).json({ error: err.message });
+    console.error("❌ STATUS API ERROR:", err.stack || err);
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 });
 /* =========================================================
