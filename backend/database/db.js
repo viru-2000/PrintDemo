@@ -24,24 +24,21 @@
 
 // module.exports = db;
 
-const mysql = require("mysql2/promise");
+const mysql = require("mysql2/promise"); // ✅ was missing in your snippet
 
-// ✅ Railway MySQL provides variables in two formats — support both
-// Railway auto-injects: MYSQLHOST, MYSQLUSER, MYSQLPASSWORD, MYSQLDATABASE, MYSQLPORT
-// Your custom vars:     DB_HOST,   DB_USER,   DB_PASSWORD,   DB_NAME,        DB_PORT
 const db = mysql.createPool({
-  host:     process.env.DB_HOST       || process.env.MYSQLHOST,
-  user:     process.env.DB_USER       || process.env.MYSQLUSER,
-  password: process.env.DB_PASSWORD   || process.env.MYSQLPASSWORD,
-  database: process.env.DB_NAME       || process.env.MYSQLDATABASE,
+  host:     process.env.DB_HOST     || process.env.MYSQLHOST,
+  user:     process.env.DB_USER     || process.env.MYSQLUSER,
+  password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD,
+  database: process.env.DB_NAME     || process.env.MYSQLDATABASE,
   port:     parseInt(process.env.DB_PORT || process.env.MYSQLPORT || "3306"),
   ssl:      { rejectUnauthorized: false },
   waitForConnections: true,
   connectionLimit:    10,
-  connectTimeout:     30000,   // ✅ 30s — Railway internal network can be slow on cold start
+  connectTimeout:     30000,
 });
 
-// TEST CONNECTION ON START
+// Test connection on startup
 (async () => {
   try {
     const conn = await db.getConnection();

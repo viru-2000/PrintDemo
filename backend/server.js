@@ -1,5 +1,4 @@
-// require("dotenv").config({ path: "./payment.env" });
-require("dotenv").config( );
+require("dotenv").config();
 const express  = require("express");
 const multer   = require("multer");
 const db       = require("./database/db");
@@ -11,8 +10,8 @@ const crypto   = require("crypto");
 const Razorpay = require("razorpay");
 const cron     = require("node-cron");
 const bcrypt   = require("bcrypt");
-const { getIO }      = require("./server/socket");
-const adminRoutes    = require("./routes/admin.routes");
+const { getIO, initSocket } = require("./server/socket");
+const adminRoutes            = require("./routes/admin.routes");
 
 const app = express();
 
@@ -29,70 +28,32 @@ process.on("unhandledRejection", (err) => {
 });
 
 /* ---------------- CONFIG ---------------- */
-const razorpay = new Razorpay({
-  key_id:     process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
+// ✅ Razorpay — only initialize if keys are present
+let razorpay = null;
+if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+  razorpay = new Razorpay({
+    key_id:     process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET,
+  });
+  console.log("✅ Razorpay initialized");
+} else {
+  console.warn("⚠️ Razorpay keys missing — payment routes will return 503");
+}
 
 // ✅ The public URL of this Railway deployment
-// Set this in Railway Variables: API_BASE_URL = https://print-production-524d.up.railway.app/api
+// Set this in Railway Variables: API_BASE_URL = https://your-app.up.railway.app/api
 const SERVER_API_BASE = process.env.API_BASE_URL || "https://print-production-524d.up.railway.app/api";
 
 /* ---------------- CORS ---------------- */
-// ✅ Allow:
-//   1. Your main Vercel production domain
-//   2. Any Vercel preview deployment (*.vercel.app)
-//   3. localhost for local dev
-// app.use(cors({
-//   origin: (origin, callback) => {
-//     // Allow requests with no origin (mobile apps, Postman, curl, Pi kiosk)
-//     if (!origin) return callback(null, true);
-
-//     const allowed = [
-//       // Production frontend
-//       "https://print-kappa-sepia.vercel.app",
-//       // Any Vercel preview URL for this project
-//       /^https:\/\/print-.*\.vercel\.app$/,
-//       // Local development
-//       /^http:\/\/localhost:\d+$/,
-//       /^http:\/\/192\.168\.\d+\.\d+:\d+$/,
-//     ];
-
-//     const isAllowed = allowed.some(pattern =>
-//       typeof pattern === "string"
-//         ? pattern === origin
-//         : pattern.test(origin)
-//     );
-
-//     if (isAllowed) {
-//       callback(null, true);
-//     } else {
-//       console.warn("CORS blocked origin:", origin);
-//       callback(new Error("Not allowed by CORS"));
-//     }
-//   },
-//   methods: ["GET", "POST", "PATCH", "OPTIONS"],
-//   allowedHeaders: [
-//     "Content-Type",
-//     "x-machine-id",
-//     "x-timestamp",
-//     "x-signature",
-//     "x-api-key",
-//   ],
-//   credentials: true,
-// }));
-
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow no-origin requests (Pi kiosk, Postman, mobile apps)
     if (!origin) return callback(null, true);
 
     const allowed =
-      !origin ||                                        // no origin = Pi/curl
-      origin.endsWith(".vercel.app") ||                 // ✅ ALL Vercel previews
-      origin === "https://print-kappa-sepia.vercel.app" || // production
-      /^http:\/\/localhost:\d+$/.test(origin) ||        // local dev
-      /^http:\/\/192\.168\.\d+\.\d+:\d+$/.test(origin); // LAN dev
+      origin.endsWith(".vercel.app") ||
+      origin === "https://print-kappa-sepia.vercel.app" ||
+      /^http:\/\/localhost:\d+$/.test(origin) ||
+      /^http:\/\/192\.168\.\d+\.\d+:\d+$/.test(origin);
 
     if (allowed) return callback(null, true);
     console.warn("CORS blocked:", origin);
@@ -114,7 +75,7 @@ app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/api/admin", adminRoutes);
 
-/* ---------------- UPLOAD ---------------- */
+/* ---------------- UPLOAD DIR ---------------- */
 const uploadDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
@@ -123,7 +84,7 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => {
     const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
     cb(null, unique + ".pdf");
-  }
+  },
 });
 
 const upload = multer({
@@ -157,8 +118,8 @@ function calculatePrice(job) {
   return {
     units,
     rate,
-    total:  units * rate,
-    paise:  units * rate * 100,
+    total: units * rate,
+    paise: units * rate * 100,
   };
 }
 
@@ -227,7 +188,7 @@ async function verifyMachine(req, res, next) {
 }
 
 /* =========================================================
-   HEALTH CHECK — Railway uses this to verify app is alive
+   HEALTH CHECK
 ========================================================= */
 app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -236,57 +197,10 @@ app.get("/health", (req, res) => {
 /* =========================================================
    MACHINE STATUS
 ========================================================= */
-// app.get("/api/machines/:machineId/status", async (req, res) => {
-//   try {
-//     const { machineId } = req.params;
-
-//     const [[machine]] = await db.query(
-//       `SELECT machine_id, is_print_locked, last_seen
-//        FROM machines WHERE machine_id=?`,
-//       [machineId]
-//     );
-
-//     if (!machine) {
-//       return res.status(404).json({ error: "Machine not found" });
-//     }
-
-//     const [heartbeat] = await db.query(
-//       `SELECT paper_level, created_at
-//        FROM machine_heartbeat_logs
-//        WHERE machine_id=?
-//        ORDER BY created_at DESC
-//        LIMIT 1`,
-//       [machineId]
-//     );
-
-//     let isOnline   = false;
-//     let paperLevel = null;
-
-//     if (heartbeat.length > 0) {
-//       const lastPing = new Date(heartbeat[0].created_at);
-//       const diff = (Date.now() - lastPing.getTime()) / 1000;
-//       isOnline   = diff < 120;
-//       paperLevel = heartbeat[0].paper_level;
-//     }
-
-//     res.json({
-//       machine_id:      machine.machine_id,
-//       is_online:       isOnline,
-//       paper_level:     paperLevel,
-//       is_print_locked: machine.is_print_locked,
-//     });
-
-//   } catch (err) {
-//     console.error("MACHINE STATUS ERROR:", err);
-//     res.status(500).json({ error: "Internal error" });
-//   }
-// });
-
 app.get("/api/machines/:machineId/status", async (req, res) => {
   try {
     const { machineId } = req.params;
 
-    // MACHINE QUERY
     const machineResult = await db.query(
       `SELECT machine_id, is_print_locked, last_seen
        FROM machines WHERE machine_id=?`,
@@ -300,7 +214,6 @@ app.get("/api/machines/:machineId/status", async (req, res) => {
       return res.status(404).json({ error: "Machine not found" });
     }
 
-    // HEARTBEAT QUERY
     const heartbeatResult = await db.query(
       `SELECT paper_level, created_at
        FROM machine_heartbeat_logs
@@ -317,27 +230,25 @@ app.get("/api/machines/:machineId/status", async (req, res) => {
 
     if (Array.isArray(heartbeatRows) && heartbeatRows.length > 0) {
       const lastPing = new Date(heartbeatRows[0].created_at);
-
       if (!isNaN(lastPing.getTime())) {
         const diff = (Date.now() - lastPing.getTime()) / 1000;
         isOnline = diff < 120;
       }
-
       paperLevel = heartbeatRows[0].paper_level ?? null;
     }
 
     return res.json({
-      machine_id: machine.machine_id,
-      is_online: isOnline,
-      paper_level: paperLevel,
+      machine_id:      machine.machine_id,
+      is_online:       isOnline,
+      paper_level:     paperLevel,
       is_print_locked: machine.is_print_locked,
     });
-
   } catch (err) {
     console.error("❌ STATUS API ERROR:", err.stack || err);
     return res.status(500).json({ error: "Internal Server Error" });
   }
 });
+
 /* =========================================================
    HEARTBEAT
 ========================================================= */
@@ -500,6 +411,11 @@ app.patch("/api/job/:jobId", async (req, res) => {
    3️⃣  CREATE PAYMENT
 ========================================================= */
 app.post("/api/create-payment", async (req, res) => {
+  // ✅ Guard: return 503 if Razorpay is not configured
+  if (!razorpay) {
+    return res.status(503).json({ error: "Payment service unavailable — Razorpay keys missing" });
+  }
+
   try {
     const { jobId } = req.body;
 
@@ -603,7 +519,6 @@ app.post("/api/verify-payment", async (req, res) => {
 
     await connection.commit();
     res.json({ success: true, otp, qrToken: qr });
-
   } catch (err) {
     if (transactionStarted) await connection.rollback();
     console.error("VERIFY PAYMENT ERROR:", err);
@@ -674,7 +589,6 @@ app.post("/api/kiosk/unlock", verifyMachine, async (req, res) => {
       paperSize: job.paper_size,
       printSide: job.print_side,
     });
-
   } catch (err) {
     await connection.rollback();
     console.error("KIOSK UNLOCK ERROR:", err);
@@ -714,10 +628,13 @@ app.post("/api/kiosk/mark-printed", verifyMachine, async (req, res) => {
 
     await logAudit(machineId, jobId, "JOB_PRINTED");
 
-    // ✅ Delete file from server after print confirmed
     if (job.file_path && fs.existsSync(job.file_path)) {
-      try { fs.unlinkSync(job.file_path); console.log("File deleted:", job.file_path); }
-      catch (err) { console.error("FILE DELETE ERROR:", err.message); }
+      try {
+        fs.unlinkSync(job.file_path);
+        console.log("File deleted:", job.file_path);
+      } catch (err) {
+        console.error("FILE DELETE ERROR:", err.message);
+      }
     }
 
     const io = getIO();
@@ -731,7 +648,7 @@ app.post("/api/kiosk/mark-printed", verifyMachine, async (req, res) => {
 });
 
 /* =========================================================
-   MARK FAILED  (with auto Razorpay refund)
+   MARK FAILED (with auto Razorpay refund)
 ========================================================= */
 app.post("/api/kiosk/mark-failed", verifyMachine, async (req, res) => {
   try {
@@ -755,11 +672,11 @@ app.post("/api/kiosk/mark-failed", verifyMachine, async (req, res) => {
     if (!result.affectedRows)
       return res.status(400).json({ error: "Invalid state transition" });
 
-    // ✅ Trigger Razorpay refund automatically
-    if (job.payment_id) {
+    // Trigger Razorpay refund automatically (only if Razorpay is available)
+    if (razorpay && job.payment_id) {
       try {
         await razorpay.payments.refund(job.payment_id, {
-          amount: Math.round(job.amount * 100), // paise
+          amount: Math.round(job.amount * 100),
         });
         console.log("Refund triggered for", jobId);
       } catch (refundErr) {
@@ -769,7 +686,6 @@ app.post("/api/kiosk/mark-failed", verifyMachine, async (req, res) => {
 
     await logAudit(machineId, jobId, "JOB_FAILED");
     res.json({ success: true });
-
   } catch (err) {
     console.error("MARK FAILED ERROR:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -815,8 +731,6 @@ app.get("/api/kiosk/pending-jobs", verifyMachine, async (req, res) => {
 
 /* =========================================================
    REGISTER MACHINE
-   ✅ Always returns the Railway public URL as API_BASE
-   so Pi saves the correct address and never uses localhost
 ========================================================= */
 app.post("/api/register-machine", async (req, res) => {
   try {
@@ -830,7 +744,6 @@ app.post("/api/register-machine", async (req, res) => {
       `SELECT * FROM machines WHERE device_serial=?`, [deviceSerial]
     );
 
-    // ✅ Existing machine → rotate API key
     if (existing) {
       const apiKey = crypto.randomBytes(32).toString("hex");
       const hash   = await bcrypt.hash(apiKey, 10);
@@ -843,11 +756,10 @@ app.post("/api/register-machine", async (req, res) => {
       return res.json({
         MACHINE_ID: existing.machine_id,
         API_KEY:    apiKey,
-        API_BASE:   SERVER_API_BASE,   // ✅ always the correct public URL
+        API_BASE:   SERVER_API_BASE,
       });
     }
 
-    // ✅ New machine — find unassigned PENDING slot
     const [[machine]] = await db.query(
       `SELECT * FROM machines WHERE assigned=FALSE AND status='PENDING' LIMIT 1`
     );
@@ -871,9 +783,8 @@ app.post("/api/register-machine", async (req, res) => {
     res.json({
       MACHINE_ID: machine.machine_id,
       API_KEY:    apiKey,
-      API_BASE:   SERVER_API_BASE,   // ✅ always the correct public URL
+      API_BASE:   SERVER_API_BASE,
     });
-
   } catch (err) {
     console.error("REGISTER ERROR:", err);
     res.status(500).json({ error: "Registration failed" });
@@ -881,7 +792,7 @@ app.post("/api/register-machine", async (req, res) => {
 });
 
 /* =========================================================
-   CLEANUP CRON — runs every 5 minutes
+   CLEANUP CRON — every 5 minutes
 ========================================================= */
 cron.schedule("*/5 * * * *", async () => {
   try {
@@ -904,17 +815,17 @@ cron.schedule("*/5 * * * *", async () => {
 
 /* ---------------- START ---------------- */
 const http = require("http");
-const { initSocket } = require("./server/socket");
 
 const server = http.createServer(app);
-// initSocket(server);
+
+// ✅ Socket.io initialized — was commented out before, causing getIO() to crash
+initSocket(server);
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`✅ API_BASE: ${SERVER_API_BASE}`);
 });
-
 
 
 
