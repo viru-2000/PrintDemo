@@ -13,7 +13,8 @@ const bcrypt      = require("bcrypt");
 const http        = require("http");
 
 const db          = require("./database/db");
-const { getIO, initSocket } = require("./server/socket");
+// const { getIO, initSocket } = require("./server/socket");
+
 const adminRoutes = require("./routes/admin.routes");
 
 const app    = express();
@@ -42,7 +43,13 @@ if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
 const SERVER_API_BASE = process.env.API_BASE_URL || "https://print-production-524d.up.railway.app/api";
 
 /* ── SOCKET.IO ── */
-initSocket(server);
+// initSocket(server);
+
+app.use((req, res, next) => {
+  console.log("🌐 Incoming:", req.method, req.url);
+  next();
+});
+
 
 /* ── CORS ── */
 app.use(cors({
@@ -153,9 +160,10 @@ app.get("/api/machines/:machineId/status", async (req, res) => {
 
   // Step 1 — get machine row
   let machine = null;
-  console.log("➡️ STATUS HIT");
+  // console.log("➡️ STATUS HIT");
   try {
     console.log("➡️ STATUS HIT");
+
     const [rows] = await db.query(
       `SELECT * FROM machines WHERE machine_id=?`, [machineId]
     );
