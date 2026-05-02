@@ -23,40 +23,29 @@
 // });
 
 // module.exports = db;
-const mysql = require("mysql2/promise"); // ✅ was missing in your snippet
+const mysql = require("mysql2/promise");
 
+// ✅ Only proven valid mysql2 pool options — no connectTimeout/acquireTimeout
 const db = mysql.createPool({
-  host:     process.env.DB_HOST     || process.env.MYSQLHOST,
-  user:     process.env.DB_USER     || process.env.MYSQLUSER,
-  password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD,
-  database: process.env.DB_NAME     || process.env.MYSQLDATABASE,
+  host:     process.env.DB_HOST     || process.env.MYSQLHOST     || "localhost",
+  user:     process.env.DB_USER     || process.env.MYSQLUSER     || "root",
+  password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD || "",
+  database: process.env.DB_NAME     || process.env.MYSQLDATABASE || "railway",
   port:     parseInt(process.env.DB_PORT || process.env.MYSQLPORT || "3306"),
-  ssl: { rejectUnauthorized: false },
-
+  ssl:             { rejectUnauthorized: false },
   waitForConnections: true,
   connectionLimit:    10,
-
-  // ✅ FIXED: connectTimeout is not a valid mysql2 pool option
-  // acquireTimeout controls how long to wait for a free connection from the pool
-  acquireTimeout: 30000,
-
-  // ✅ Prevents Railway from dropping idle connections
-  enableKeepAlive:       true,
-  keepAliveInitialDelay: 0,
+  queueLimit:         0,
 });
 
-// Test connection on startup
+// Test on startup — non-fatal so server always starts
 (async () => {
   try {
     const conn = await db.getConnection();
-    console.log("✅ DB Connected to:", process.env.DB_HOST || process.env.MYSQLHOST);
+    console.log("✅ DB Connected:", process.env.DB_HOST || process.env.MYSQLHOST);
     conn.release();
   } catch (err) {
     console.error("❌ DB Connection Failed:", err.message);
-    console.error("   Host:", process.env.DB_HOST || process.env.MYSQLHOST);
-    console.error("   User:", process.env.DB_USER || process.env.MYSQLUSER);
-    console.error("   DB:  ", process.env.DB_NAME || process.env.MYSQLDATABASE);
-    console.error("   Port:", process.env.DB_PORT || process.env.MYSQLPORT);
   }
 })();
 
