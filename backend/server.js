@@ -153,7 +153,9 @@ app.get("/api/machines/:machineId/status", async (req, res) => {
 
   // Step 1 — get machine row
   let machine = null;
+  console.log("➡️ STATUS HIT");
   try {
+    console.log("➡️ STATUS HIT");
     const [rows] = await db.query(
       `SELECT * FROM machines WHERE machine_id=?`, [machineId]
     );
