@@ -903,7 +903,7 @@ const http = require("http");
 const { initSocket } = require("./server/socket");
 
 const server = http.createServer(app);
-initSocket(server);
+// initSocket(server);
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, "0.0.0.0", () => {
