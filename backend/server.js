@@ -16,6 +16,10 @@ const adminRoutes    = require("./routes/admin.routes");
 
 const app = express();
 
+console.log("ENV CHECK:");
+console.log("RAZORPAY_KEY_ID:", process.env.RAZORPAY_KEY_ID ? "OK" : "MISSING");
+console.log("DB_HOST:", process.env.DB_HOST || process.env.MYSQLHOST);
+
 process.on("uncaughtException", (err) => {
   console.error("UNCAUGHT EXCEPTION:", err);
 });
