@@ -23,3 +23,5 @@ const db = mysql.createPool({
 });
 
 module.exports = db;
+
+// mysql://root:ruxfBOwHLuhmlTpJtQuRpDVgxBArrRUw@interchange.proxy.rlwy.net:19751/railway
