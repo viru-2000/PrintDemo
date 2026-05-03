@@ -54,7 +54,7 @@ exports.createMachine = async (req, res) => {
     const { name, location } = req.body;
 
     const [rows] = await db.query(
-      "SELECT machine_id FROM machines ORDER BY machine_id DESC LIMIT 1"
+      "SELECT machine_id FROM machines ORDER BY machine_id DESC"
     );
 
     let machineId;
