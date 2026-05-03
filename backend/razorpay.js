@@ -9,6 +9,8 @@
 // ${{ secret() }}
 
 let razorpay = null;
+console.log("KEY_ID:", process.env.RAZORPAY_KEY_ID);
+console.log("KEY_SECRET:", process.env.RAZORPAY_KEY_SECRET);
 
 if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
   razorpay = new Razorpay({

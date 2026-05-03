@@ -29,6 +29,8 @@ process.on("unhandledRejection", (err) => console.error("UNHANDLED REJECTION:", 
 
 /* ── RAZORPAY (optional — routes return 503 if missing) ── */
 let razorpay = null;
+console.log("KEY_ID:", process.env.RAZORPAY_KEY_ID);
+console.log("KEY_SECRET:", process.env.RAZORPAY_KEY_SECRET);
 if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
   razorpay = new Razorpay({
     key_id:     process.env.RAZORPAY_KEY_ID,
