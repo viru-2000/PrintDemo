@@ -3,7 +3,7 @@ const bcrypt  = require("bcrypt");
 const db      = require("../database/db");
 
 // ✅ Use the same env var as server.js so Pi devices get the correct Railway URL
-const SERVER_API_BASE = process.env.API_BASE_URL || "https://print-production-524d.up.railway.app/api";
+const SERVER_API_BASE = process.env.API_BASE_URL || "https://print-production-524d.up.railway.app";
 
 /* ===========================
    DASHBOARD STATS
