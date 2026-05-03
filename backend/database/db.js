@@ -22,6 +22,8 @@
 //   connectionLimit: 10,
 // });
 
+
+mysql://root:ruxfBOwHLuhmlTpJtQuRpDVgxBArrRUw@mysql.railway.internal:3306/railway
 // module.exports = db;
 const mysql = require("mysql2/promise");
 
