@@ -50,7 +50,7 @@ app.use(cors({
     if (!origin) return callback(null, true);
     const ok =
       origin.endsWith(".vercel.app") || 
-      origin === "https://print-kappa-sepia.vercel.app" ||
+      origin === "https://print-kappa-sepia.vercel.app/" ||
       /^http:\/\/localhost:\d+$/.test(origin) ||
       /^http:\/\/192\.168\.\d+\.\d+:\d+$/.test(origin);
     if (ok) return callback(null, true);
