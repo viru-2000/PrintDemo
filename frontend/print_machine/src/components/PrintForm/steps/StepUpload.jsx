@@ -180,11 +180,11 @@ export default function StepUpload({
         )}
       </div>
 
-      {!!fileError && (
+      {Boolean(fileError) && (
         <div className="pf-alert error">⚠ {fileError}</div>
       )}
 
-      {!!file && (
+      {Boolean(file) && (
         <div className="pf-file-info">
           <span><MdAttachFile /></span>
           <span className="file-name">{file.name}</span>
@@ -193,7 +193,7 @@ export default function StepUpload({
       )}
 
       {/* Print Options — only show once a file is chosen */}
-      {!!file && (
+      {Boolean(file) && (
         <>
           <div className="pf-divider" />
           <p className="pf-section-title">⚙️ Print Options</p>

@@ -391,7 +391,7 @@ export default function PrintForm() {
         </div>
 
         {/* STICKY ACTION BAR — button always in thumb reach */}
-        {Boolean(actionBar) && (
+        {actionBar !== null && actionBar !== undefined && (
           <div className="pf-action-bar">
             {actionBar}
           </div>
