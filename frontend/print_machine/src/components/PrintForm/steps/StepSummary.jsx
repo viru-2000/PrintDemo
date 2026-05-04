@@ -202,9 +202,7 @@ export default function StepSummary({
             </div>
           </div>
         </div>
-      ) : (
-        <div className="pf-alert warning">⏳ Loading summary...</div>
-      )}
+      ) : null}
 
       {/* Adjust options before paying */}
       <p className="pf-section-title">✏️ Adjust Options</p>
