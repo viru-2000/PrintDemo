@@ -6,7 +6,8 @@
    ──────────────────────────────────────── */
 :root {
   /* Core palette */
-  --bg:          #0d0d0d;
+  /* --bg:          #0d0d0d; */
+  --bg:          #faf8f8;
   --surface:     #141414;
   --surface-2:   #1a1a1a;
   --surface-3:   #222222;
