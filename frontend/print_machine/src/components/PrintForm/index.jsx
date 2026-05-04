@@ -166,7 +166,6 @@
 //   );
 // }
 
-
 // components/PrintForm/index.jsx
 import React, { useMemo } from "react";
 import "./PrintForm.css";
@@ -332,13 +331,12 @@ export default function PrintForm() {
         {/* SCROLLABLE BODY */}
         <div className="pf-body">
 
-          {/* Backend warning (machine ID present but server unreachable) */}
-          {!!machineError && !!machineId && (
+          {/* FIX: use ternary instead of && to prevent 0 render */}
+          {(machineError && machineId) ? (
             <div className="pf-alert warning">⚠ {machineError}</div>
-          )}
+          ) : null}
 
-          {/* Status dot — no machine ID text, just online/offline */}
-          {!!machineId && (
+          {machineId ? (
             <div className={`pf-status-bar ${isOnline ? "" : "offline"}`}>
               <span className="dot" />
               {isLocked
@@ -347,9 +345,9 @@ export default function PrintForm() {
                 ? "Printer online"
                 : "Connecting to printer..."}
             </div>
-          )}
+          ) : null}
 
-          {currentStep === 1 && (
+          {currentStep === 1 ? (
             <StepUpload
               file={file}
               handleFileChange={handleFileChange}
@@ -361,9 +359,9 @@ export default function PrintForm() {
               isLocked={isLocked}
               jobError={jobError}
             />
-          )}
+          ) : null}
 
-          {currentStep === 2 && (
+          {currentStep === 2 ? (
             <StepSummary
               jobId={jobId}
               summary={summary}
@@ -376,28 +374,27 @@ export default function PrintForm() {
               isLocked={isLocked}
               file={file}
               onBack={resetJob}
-              
             />
-          )}
+          ) : null}
 
-          {currentStep === 3 && (
+          {currentStep === 3 ? (
             <StepOTP
               otp={otp}
               qrToken={qrToken}
               jobSuccess={jobSuccess}
               jobError={jobError}
             />
-          )}
+          ) : null}
+
         </div>
 
-        {/* STICKY ACTION BAR — button always in thumb reach */}
-        {actionBar !== null && actionBar !== undefined && (
+        {/* FIX: use ternary instead of Boolean() && to prevent 0 render */}
+        {actionBar !== null ? (
           <div className="pf-action-bar">
             {actionBar}
           </div>
-        )}
+        ) : null}
 
-        {/* FOOTER — version only, no machine ID */}
         <div className="pf-footer">
           PrintKiosk v1.0
         </div>

@@ -132,10 +132,10 @@
 //     </div>
 //   );
 // }
-
 // steps/StepUpload.jsx
 import React from "react";
 import { MdAttachFile } from "react-icons/md";
+
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -159,7 +159,7 @@ export default function StepUpload({
       {/* FILE DROP ZONE */}
       <p className="pf-section-title">📂 Select Document</p>
 
-      <div className={`pf-dropzone ${!!file ? "has-file" : ""}`}>
+      <div className={`pf-dropzone ${file ? "has-file" : ""}`}>
         <input
           type="file"
           accept="application/pdf"
@@ -180,29 +180,25 @@ export default function StepUpload({
         )}
       </div>
 
-      {Boolean(fileError) && (
+      {/* FIX: use ternary instead of && to avoid falsy 0 renders */}
+      {fileError ? (
         <div className="pf-alert error">⚠ {fileError}</div>
-      )}
+      ) : null}
 
-      {Boolean(file) && (
+      {file ? (
         <div className="pf-file-info">
           <span><MdAttachFile /></span>
           <span className="file-name">{file.name}</span>
           <span className="file-size">{formatBytes(file.size)}</span>
         </div>
-      )}
+      ) : null}
 
       {/* Print Options — only show once a file is chosen */}
-      {Boolean(file) && (
+      {file ? (
         <>
           <div className="pf-divider" />
           <p className="pf-section-title">⚙️ Print Options</p>
 
-          {/*
-            Grid order (left-to-right, top-to-bottom):
-            [ Print Type ] [ Copies     ]
-            [ Print Side ] [ Paper Size ]
-          */}
           <div className="pf-grid">
             <div className="pf-field">
               <label>Print Type</label>
@@ -212,41 +208,26 @@ export default function StepUpload({
               </select>
             </div>
 
-            {/* <div className="pf-field">
-              <label>Copies</label>
-              <input
-                type="number"
-                min="1"
-                max="50"
-                value={copies}
-                onChange={(e) =>
-                  setCopies(Math.max(1, Math.min(50, Number(e.target.value))))
-                }
-              />
-            </div> */}
             <div className="pf-field">
-  <label>Copies</label>
-
-  <div className="pf-counter">
-    <button
-      type="button"
-      onClick={() => setCopies((prev) => Math.max(1, prev - 1))}
-      className="pf-counter-btn"
-    >
-      −
-    </button>
-
-    <span className="pf-counter-value">{copies}</span>
-
-    <button
-      type="button"
-      onClick={() => setCopies((prev) => Math.min(50, prev + 1))}
-      className="pf-counter-btn"
-    >
-      +
-    </button>
-  </div>
-</div>
+              <label>Copies</label>
+              <div className="pf-counter">
+                <button
+                  type="button"
+                  onClick={() => setCopies((prev) => Math.max(1, prev - 1))}
+                  className="pf-counter-btn"
+                >
+                  −
+                </button>
+                <span className="pf-counter-value">{copies}</span>
+                <button
+                  type="button"
+                  onClick={() => setCopies((prev) => Math.min(50, prev + 1))}
+                  className="pf-counter-btn"
+                >
+                  +
+                </button>
+              </div>
+            </div>
 
             <div className="pf-field">
               <label>Print Side</label>
@@ -265,17 +246,18 @@ export default function StepUpload({
             </div>
           </div>
         </>
-      )}
+      ) : null}
 
-      {jobError && (
+      {jobError ? (
         <div className="pf-alert error" style={{ marginTop: 10 }}>⚠ {jobError}</div>
-      )}
+      ) : null}
 
-      {isLocked && (
+      {isLocked ? (
         <div className="pf-alert warning" style={{ marginTop: 10 }}>
           ⚠ Machine is out of paper. Printing is unavailable.
         </div>
-      )}
+      ) : null}
+
     </div>
   );
 }
