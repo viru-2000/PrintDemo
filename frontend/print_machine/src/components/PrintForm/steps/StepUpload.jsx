@@ -22,7 +22,7 @@ export default function StepUpload({
   return (
     <div className="pf-step-enter">
 
-      <p className="pf-section-title">Select Document</p>
+      <p className="pf-section-title">Accepted formats:PDF,DOCX,JPG,PNG.MAX 100MB per file</p>
 
       <div className={`pf-dropzone ${file ? "has-file" : ""}`}>
         <input
@@ -33,8 +33,8 @@ export default function StepUpload({
         {!file ? (
           <>
             <div className="pf-dropzone-icon">📄</div>
-            <div className="pf-dropzone-text">Tap to select PDF</div>
-            <div className="pf-dropzone-hint">PDF only · Max 50 MB</div>
+            <div className="pf-dropzone-text">Select file</div>
+            {/* <div className="pf-dropzone-hint">PDF only · Max 50 MB</div> */}
           </>
         ) : (
           <>
