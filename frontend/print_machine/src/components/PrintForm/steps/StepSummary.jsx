@@ -42,7 +42,7 @@ export default function StepSummary({
         </div>
       ) : null}
 
-      <p className="pf-section-title">// order summary</p>
+      <p className="pf-section-title">Order Summary</p>
 
       {summary ? (
         <div className="pf-summary">

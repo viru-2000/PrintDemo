@@ -5,7 +5,7 @@ import { QRCodeCanvas } from "qrcode.react";
 export default function StepOTP({ otp, qrToken, jobSuccess, jobError }) {
   return (
     <div className="pf-step-enter">
-      <p className="pf-section-title">// collect your prints</p>
+      <p className="pf-section-title">Collect Your Prints</p>
 
       {jobSuccess ? (
         <div className="pf-alert success">✓ {jobSuccess}</div>

@@ -22,7 +22,7 @@ export default function StepUpload({
   return (
     <div className="pf-step-enter">
 
-      <p className="pf-section-title">// select document</p>
+      <p className="pf-section-title">Select Document</p>
 
       <div className={`pf-dropzone ${file ? "has-file" : ""}`}>
         <input
@@ -62,7 +62,7 @@ export default function StepUpload({
       {file ? (
         <>
           <div className="pf-divider" />
-          <p className="pf-section-title">// print options</p>
+          <p className="pf-section-title">Print Options</p>
 
           <div className="pf-grid">
             <div className="pf-field">
