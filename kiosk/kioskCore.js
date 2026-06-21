@@ -22,7 +22,7 @@ const PROJECT_ROOT = IS_PI
   ? "/home/pi/kiosk"          // ← Pi path  (change if folder name differs)
   : path.resolve(__dirname);     // ← Laptop: use wherever the file actually is
 
-const FALLBACK_API_BASE  = "https://print-production-ac62.up.railway.app/api"; // laptop server IP — first boot only
+const FALLBACK_API_BASE  = "https://printdemo-production.up.railway.app/api"; // laptop server IP — first boot only
 const CONFIG_FILE        = path.join(PROJECT_ROOT, "config.json");
 const DOWNLOAD_DIR       = path.join(PROJECT_ROOT, "kiosk", "files");
 const CACHE_FILE         = path.join(PROJECT_ROOT, "kiosk", "jobs.json");
