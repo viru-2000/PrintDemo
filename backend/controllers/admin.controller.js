@@ -27,7 +27,7 @@ exports.getStats = async (req, res) => {
     const [[machinesOnline]] = await db.query(`
       SELECT COUNT(*) as total
       FROM machines
-      WHERE last_seen > NOW() - INTERVAL 2 MINUTE
+      WHERE last_seen_at > NOW() - INTERVAL 2 MINUTE
     `);
 
     const [[machinesTotal]] = await db.query(`
@@ -178,7 +178,7 @@ exports.getMachineInfo = async (req, res) => {
         m.name,
         m.status,
         m.is_print_locked,
-        m.last_seen,
+        m.last_seen_at,
         COUNT(p.id) as total_jobs,
         COALESCE(SUM(p.amount), 0) as revenue
       FROM machines m
