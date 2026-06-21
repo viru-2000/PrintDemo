@@ -41,7 +41,7 @@ if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
   console.warn("⚠️  Razorpay keys missing — payment routes disabled");
 }
 
-const SERVER_API_BASE = process.env.API_BASE_URL || "https://print-production-ac62.up.railway.app/api";
+const SERVER_API_BASE = process.env.API_BASE_URL || "https://printdemo-production.up.railway.app/api";
 
 /* ── SOCKET.IO ── */
 initSocket(server);
@@ -554,11 +554,25 @@ app.post("/api/register-machine", async (req, res) => {
    CLEANUP CRON
 ═══════════════════════════════════════════════════════════ */
 cron.schedule("*/5 * * * *", async () => {
+  // try {
+  //   await db.query(`DELETE FROM print_jobs WHERE status='CREATED' AND created_at < NOW() - INTERVAL 30 MINUTE`);
+  //   await db.query(`UPDATE print_jobs SET status='EXPIRED' WHERE status='PAID' AND otp_expires_at < NOW()`);
+  //   await db.query(`DELETE FROM print_jobs WHERE status='PRINTED' AND created_at < NOW() - INTERVAL 1 DAY`);
+  // } catch (err) { console.error("CLEANUP ERROR:", err.message); }
   try {
+    console.log("STEP 1");
     await db.query(`DELETE FROM print_jobs WHERE status='CREATED' AND created_at < NOW() - INTERVAL 30 MINUTE`);
+
+    console.log("STEP 2");
     await db.query(`UPDATE print_jobs SET status='EXPIRED' WHERE status='PAID' AND otp_expires_at < NOW()`);
+
+    console.log("STEP 3");
     await db.query(`DELETE FROM print_jobs WHERE status='PRINTED' AND created_at < NOW() - INTERVAL 1 DAY`);
-  } catch (err) { console.error("CLEANUP ERROR:", err.message); }
+
+    console.log("STEP 4");
+  } catch (err) {
+    console.error("CLEANUP ERROR FULL:", err);
+  }
 });
 
 /* ═══════════════════════════════════════════════════════════
