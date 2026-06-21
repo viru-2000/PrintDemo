@@ -9,6 +9,7 @@ const SERVER_API_BASE = process.env.API_BASE_URL || "https://printdemo-productio
    DASHBOARD STATS
 =========================== */
 exports.getStats = async (req, res) => {
+
   try {
     const [[jobsToday]] = await db.query(`
       SELECT COUNT(*) as total
@@ -98,7 +99,7 @@ exports.createMachine = async (req, res) => {
 exports.getMachines = async (req, res) => {
   try {
     const [machines] = await db.query(`
-      SELECT machine_id, last_seen, is_print_locked
+      SELECT machine_id, last_seen_at, is_print_locked
       FROM machines
     `);
     res.json(machines);
