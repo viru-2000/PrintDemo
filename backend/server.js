@@ -521,37 +521,103 @@ app.get("/api/kiosk/pending-jobs", verifyMachine, async (req, res) => {
 /* ═══════════════════════════════════════════════════════════
    REGISTER MACHINE
 ═══════════════════════════════════════════════════════════ */
+// app.post("/api/register-machine", async (req, res) => {
+//   try {
+//     const { deviceSerial } = req.body;
+//     if (!deviceSerial) return res.status(400).json({ error: "Device serial required" });
+
+//     const [[existing]] = await db.query(`SELECT * FROM machines WHERE device_serial=?`, [deviceSerial]);
+//     if (existing) {
+//       const apiKey = crypto.randomBytes(32).toString("hex");
+//       await db.query(`UPDATE machines SET api_key_hash=? WHERE machine_id=?`,
+//         [await bcrypt.hash(apiKey, 10), existing.machine_id]);
+//       return res.json({ MACHINE_ID: existing.machine_id, API_KEY: apiKey, API_BASE: SERVER_API_BASE });
+//     }
+
+//     const [[machine]] = await db.query(
+//       `SELECT * FROM machines WHERE assigned=FALSE AND status='PENDING' LIMIT 1`
+//     );
+//     if (!machine) return res.status(400).json({ error: "No available machines. Create from admin panel first." });
+
+//     const apiKey = crypto.randomBytes(32).toString("hex");
+//     await db.query(
+//       `UPDATE machines SET assigned=TRUE, status='ACTIVE', device_serial=?, api_key_hash=?, last_seen_at=NOW()
+//        WHERE machine_id=?`,
+//       [deviceSerial, await bcrypt.hash(apiKey, 10), machine.machine_id]
+//     );
+//     res.json({ MACHINE_ID: machine.machine_id, API_KEY: apiKey, API_BASE: SERVER_API_BASE });
+//   } catch (err) {
+//     console.error("REGISTER ERROR:", err);
+//     res.status(500).json({ error: "Registration failed" });
+//   }
+// });
+ 
 app.post("/api/register-machine", async (req, res) => {
   try {
     const { deviceSerial } = req.body;
     if (!deviceSerial) return res.status(400).json({ error: "Device serial required" });
-
-    const [[existing]] = await db.query(`SELECT * FROM machines WHERE device_serial=?`, [deviceSerial]);
+ 
+    const [[existing]] = await db.query(
+      `SELECT * FROM machines WHERE device_serial=?`, [deviceSerial]
+    );
+ 
     if (existing) {
-      const apiKey = crypto.randomBytes(32).toString("hex");
-      await db.query(`UPDATE machines SET api_key_hash=? WHERE machine_id=?`,
-        [await bcrypt.hash(apiKey, 10), existing.machine_id]);
-      return res.json({ MACHINE_ID: existing.machine_id, API_KEY: apiKey, API_BASE: SERVER_API_BASE });
+      // ✅ FIX: Return the SAME key if we stored it, otherwise issue a new one
+      // and save it so next time we can return it again.
+      let apiKey = existing.api_key_plain; // stored plain key from previous registration
+ 
+      if (!apiKey) {
+        // First time after adding the column — generate and store
+        apiKey = crypto.randomBytes(32).toString("hex");
+        await db.query(
+          `UPDATE machines SET api_key_hash=?, api_key_plain=?, last_seen_at=NOW()
+           WHERE machine_id=?`,
+          [await bcrypt.hash(apiKey, 10), apiKey, existing.machine_id]
+        );
+        console.log(`🔑 New key issued and stored for ${existing.machine_id}`);
+      } else {
+        // ✅ Return the existing key — no DB write needed, Pi gets same key always
+        console.log(`🔑 Returning existing key for ${existing.machine_id}`);
+      }
+ 
+      return res.json({
+        MACHINE_ID: existing.machine_id,
+        API_KEY:    apiKey,
+        API_BASE:   SERVER_API_BASE,
+      });
     }
-
+ 
+    // Brand new device — assign from pool
     const [[machine]] = await db.query(
       `SELECT * FROM machines WHERE assigned=FALSE AND status='PENDING' LIMIT 1`
     );
-    if (!machine) return res.status(400).json({ error: "No available machines. Create from admin panel first." });
-
+    if (!machine) {
+      return res.status(400).json({
+        error: "No available machines. Create one from the admin panel first."
+      });
+    }
+ 
     const apiKey = crypto.randomBytes(32).toString("hex");
     await db.query(
-      `UPDATE machines SET assigned=TRUE, status='ACTIVE', device_serial=?, api_key_hash=?, last_seen_at=NOW()
+      `UPDATE machines
+       SET assigned=TRUE, status='ACTIVE', device_serial=?,
+           api_key_hash=?, api_key_plain=?, last_seen_at=NOW()
        WHERE machine_id=?`,
-      [deviceSerial, await bcrypt.hash(apiKey, 10), machine.machine_id]
+      [deviceSerial, await bcrypt.hash(apiKey, 10), apiKey, machine.machine_id]
     );
-    res.json({ MACHINE_ID: machine.machine_id, API_KEY: apiKey, API_BASE: SERVER_API_BASE });
+ 
+    console.log(`✅ New machine registered: ${machine.machine_id} → serial ${deviceSerial}`);
+    res.json({
+      MACHINE_ID: machine.machine_id,
+      API_KEY:    apiKey,
+      API_BASE:   SERVER_API_BASE,
+    });
+ 
   } catch (err) {
     console.error("REGISTER ERROR:", err);
     res.status(500).json({ error: "Registration failed" });
   }
 });
-
 /* ═══════════════════════════════════════════════════════════
    CLEANUP CRON
 ═══════════════════════════════════════════════════════════ */
