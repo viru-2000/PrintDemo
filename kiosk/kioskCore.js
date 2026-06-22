@@ -26,7 +26,7 @@ const HEARTBEAT_INTERVAL = 30000;
 const POLL_INTERVAL      = 30000;
 
 /* ===============================
-   LOAD API_BASE FROM CONFIG FIRST
+   LOAD API_BASE FROM CONFIG
 =============================== */
 function getApiBase() {
   try {
@@ -43,7 +43,7 @@ function getApiBase() {
   } catch (err) {
     console.warn("⚠️  Could not read API_BASE from config, using fallback:", err.message);
   }
-  console.log("🌐 API_BASE using fallback (first boot):", FALLBACK_API_BASE);
+  console.log("🌐 API_BASE using fallback:", FALLBACK_API_BASE);
   return FALLBACK_API_BASE;
 }
 
@@ -56,6 +56,41 @@ let MACHINE_ID   = null;
 let API_KEY      = null;
 let PRINTER_NAME = null;
 let fileCache    = {};
+
+/* ===============================
+   NETWORK WAIT
+   ✅ FIX: Waits until DNS resolves before proceeding.
+   Pi takes 5-15s after boot to get network. Without this,
+   the app crashes immediately with EAI_AGAIN.
+=============================== */
+const dns = require("dns").promises;
+
+async function waitForNetwork(maxWaitMs = 60000) {
+  const hostname = new URL(API_BASE).hostname;
+  const interval = 3000;
+  const attempts = Math.ceil(maxWaitMs / interval);
+
+  console.log(`🌐 Waiting for network (DNS: ${hostname})...`);
+
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await dns.lookup(hostname);
+      console.log(`✅ Network ready (attempt ${i})`);
+      return true;
+    } catch (err) {
+      console.log(`⏳ Network not ready yet (attempt ${i}/${attempts}): ${err.message}`);
+      await delay(interval);
+    }
+  }
+
+  console.error("❌ Network never became available — giving up after", maxWaitMs / 1000, "seconds");
+  return false;
+}
+
+/* ===============================
+   DELAY HELPER
+=============================== */
+const delay = ms => new Promise(r => setTimeout(r, ms));
 
 /* ===============================
    CACHE HELPERS
@@ -123,7 +158,7 @@ function ensureDir() {
 }
 
 /* ===============================
-   DEVICE SERIAL  (MAC address)
+   DEVICE SERIAL
 =============================== */
 function getDeviceSerial() {
   const interfaces = os.networkInterfaces();
@@ -139,49 +174,66 @@ function getDeviceSerial() {
 
 /* ===============================
    REGISTER MACHINE
-   ✅ FIX: Server now returns the SAME api_key for an already-registered
-   device serial (see server fix below). Pi always saves whatever the
-   server returns — so both sides are always in sync.
+   ✅ Retries on network failure instead of crashing
 =============================== */
-async function registerMachine() {
+async function registerMachine(retries = 5) {
   console.log("🔄 Registering machine...");
   const deviceSerial = getDeviceSerial();
   console.log("🔑 Device serial (MAC):", deviceSerial);
 
-  const res = await axios.post(`${API_BASE}/register-machine`, { deviceSerial });
-  console.log("📡 Server registration response:", JSON.stringify(res.data));
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await axios.post(
+        `${API_BASE}/register-machine`,
+        { deviceSerial },
+        { timeout: 15000 }
+      );
+      console.log("📡 Server registration response:", JSON.stringify(res.data));
 
-  const machineId = res.data.MACHINE_ID || res.data.machine_id || res.data.machineId;
-  if (!machineId) {
-    throw new Error(
-      `Server did not return MACHINE_ID. Got keys: ${Object.keys(res.data).join(", ")}. ` +
-      `Full response: ${JSON.stringify(res.data)}`
-    );
+      const machineId = res.data.MACHINE_ID || res.data.machine_id || res.data.machineId;
+      if (!machineId) {
+        throw new Error(
+          `Server did not return MACHINE_ID. Keys: ${Object.keys(res.data).join(", ")}`
+        );
+      }
+
+      const apiKey  = res.data.API_KEY  || res.data.api_key  || res.data.apiKey;
+      const apiBase = res.data.API_BASE || res.data.api_base || res.data.apiBase || API_BASE;
+
+      if (!apiKey) {
+        throw new Error(`Server did not return API_KEY. Keys: ${Object.keys(res.data).join(", ")}`);
+      }
+
+      const fullConfig = {
+        MACHINE_ID:    machineId,
+        DEVICE_SERIAL: deviceSerial,
+        API_KEY:       apiKey,
+        API_BASE:      apiBase,
+        PRINTER_NAME:  null,
+      };
+
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(fullConfig, null, 2));
+      console.log("✅ Machine registered — MACHINE_ID:", machineId);
+      console.log("💾 Config saved to:", CONFIG_FILE);
+      return fullConfig;
+
+    } catch (err) {
+      const isNetwork = err.code === "EAI_AGAIN" || err.code === "ENOTFOUND" || err.code === "ECONNREFUSED";
+      console.error(`❌ Registration attempt ${attempt}/${retries} failed: ${err.message}`);
+
+      if (attempt < retries) {
+        const wait = isNetwork ? 5000 : 3000;
+        console.log(`⏳ Retrying in ${wait / 1000}s...`);
+        await delay(wait);
+      } else {
+        throw new Error(`Registration failed after ${retries} attempts: ${err.message}`);
+      }
+    }
   }
-
-  const apiKey  = res.data.API_KEY  || res.data.api_key  || res.data.apiKey;
-  const apiBase = res.data.API_BASE || res.data.api_base || res.data.apiBase || API_BASE;
-
-  if (!apiKey) {
-    throw new Error(`Server did not return API_KEY. Got keys: ${Object.keys(res.data).join(", ")}`);
-  }
-
-  const fullConfig = {
-    MACHINE_ID:    machineId,
-    DEVICE_SERIAL: deviceSerial,
-    API_KEY:       apiKey,
-    API_BASE:      apiBase,
-    PRINTER_NAME:  null,
-  };
-
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(fullConfig, null, 2));
-  console.log("✅ Machine registered — MACHINE_ID:", machineId);
-  console.log("💾 Config saved to:", CONFIG_FILE);
-  return fullConfig;
 }
 
 /* ===============================
-   LOAD CONFIG
+   LOAD / SAVE CONFIG
 =============================== */
 function loadConfig() {
   try {
@@ -197,25 +249,20 @@ function loadConfig() {
 
 function saveConfig(updates) {
   const current = loadConfig() || {};
-  const merged  = { ...current, ...updates };
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2));
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify({ ...current, ...updates }, null, 2));
 }
 
 /* ===============================
    VERIFY KEY WITH SERVER
-   ✅ NEW: Before using saved credentials, ping the server
-   to confirm the key is still valid. If rejected, re-register.
 =============================== */
 async function verifyKeyWithServer(machineId, apiKey, apiBase) {
   try {
     console.log("🔍 Verifying saved API key with server...");
-    // We do a lightweight heartbeat-style check
-    const body = { status: "CHECK" };
-    const timestamp  = Date.now().toString();
-    const bodyString = JSON.stringify(body);
-    const signature  = crypto
+    const body      = { status: "CHECK" };
+    const timestamp = Date.now().toString();
+    const signature = crypto
       .createHmac("sha256", apiKey)
-      .update(machineId + timestamp + bodyString)
+      .update(machineId + timestamp + JSON.stringify(body))
       .digest("hex");
 
     await axios.post(`${apiBase}/kiosk/heartbeat`, body, {
@@ -227,11 +274,15 @@ async function verifyKeyWithServer(machineId, apiKey, apiBase) {
       },
       timeout: 10000,
     });
-
     console.log("✅ API key verified — credentials are valid");
     return true;
   } catch (err) {
     const status = err.response?.status;
+    // ✅ Network errors ≠ key rejection — don't wipe config on network failure
+    if (err.code === "EAI_AGAIN" || err.code === "ENOTFOUND" || err.code === "ECONNREFUSED") {
+      console.warn("⚠️  Could not verify key — network error (not treating as invalid):", err.message);
+      return true; // assume key is still good, network was just unavailable
+    }
     console.warn(`⚠️  Key verification failed — HTTP ${status}: ${err.response?.data?.error || err.message}`);
     return false;
   }
@@ -239,58 +290,69 @@ async function verifyKeyWithServer(machineId, apiKey, apiBase) {
 
 /* ===============================
    INIT MACHINE
-   ✅ FIX: After loading config, verify the key is still accepted
-   by the server. Re-register if rejected (403/401).
+   ✅ FIX: Waits for network first, retries registration,
+   never calls process.exit so Electron doesn't die.
+   ✅ FIX: Distinguishes network errors from auth errors
+   so it doesn't wipe config.json on a DNS failure.
 =============================== */
 async function initMachine() {
-  try {
-    let config = loadConfig();
+  // ✅ Wait up to 60s for network before doing anything
+  const networkOk = await waitForNetwork(60000);
+  if (!networkOk) {
+    // If we have a valid saved config, continue offline — heartbeat will retry
+    const config = loadConfig();
+    if (config?.MACHINE_ID && config?.API_KEY) {
+      console.warn("⚠️  No network at boot — using cached config, will retry online ops later");
+      MACHINE_ID = config.MACHINE_ID;
+      API_KEY    = config.API_KEY;
+      if (config.API_BASE)      API_BASE      = config.API_BASE;
+      if (config.PRINTER_NAME)  PRINTER_NAME  = config.PRINTER_NAME;
+      return;
+    }
+    throw new Error("No network and no saved config — cannot start");
+  }
 
-    // Re-register if config is missing or has old MAC-based MACHINE_ID
-    const isMacAddress = config?.MACHINE_ID &&
-      /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(config.MACHINE_ID);
+  let config = loadConfig();
 
-    const hasValidConfig = config
-      && config.API_KEY
-      && config.MACHINE_ID
-      && !isMacAddress;
+  const isMacAddress = config?.MACHINE_ID &&
+    /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(config.MACHINE_ID);
 
-    if (!hasValidConfig) {
-      if (isMacAddress) {
-        console.log("⚠️  Old config — MACHINE_ID is a MAC address. Re-registering...");
-      } else {
-        console.log("⚠️  Config missing or incomplete — registering...");
-      }
+  const hasValidConfig = config?.API_KEY && config?.MACHINE_ID && !isMacAddress;
+
+  if (!hasValidConfig) {
+    if (isMacAddress) {
+      console.log("⚠️  Old config — MACHINE_ID is a MAC. Re-registering...");
+    } else {
+      console.log("⚠️  Config missing or incomplete — registering...");
+    }
+    try { fs.unlinkSync(CONFIG_FILE); } catch {}
+    config = await registerMachine();
+  } else {
+    // Verify key is still valid
+    const keyOk = await verifyKeyWithServer(
+      config.MACHINE_ID, config.API_KEY, config.API_BASE || API_BASE
+    );
+    if (!keyOk) {
+      console.log("🔄 Key rejected by server — re-registering...");
       try { fs.unlinkSync(CONFIG_FILE); } catch {}
       config = await registerMachine();
-    } else {
-      // ✅ Config looks valid — but verify the key is still accepted by server
-      const keyOk = await verifyKeyWithServer(config.MACHINE_ID, config.API_KEY, config.API_BASE || API_BASE);
-      if (!keyOk) {
-        console.log("🔄 Key rejected by server — re-registering to get fresh credentials...");
-        try { fs.unlinkSync(CONFIG_FILE); } catch {}
-        config = await registerMachine();
-      }
     }
-
-    MACHINE_ID = config.MACHINE_ID;
-    API_KEY    = config.API_KEY;
-    if (config.API_BASE) API_BASE = config.API_BASE;
-    if (config.PRINTER_NAME) PRINTER_NAME = config.PRINTER_NAME;
-
-    console.log("✅ Machine Ready");
-    console.log("   MACHINE_ID :", MACHINE_ID);
-    console.log("   API_BASE   :", API_BASE);
-    console.log("   Platform   :", process.platform, IS_PI ? "(Raspberry Pi)" : "(Laptop/Dev)");
-    console.log("   Config     :", CONFIG_FILE);
-  } catch (err) {
-    console.error("❌ Init failed:", err.message);
-    process.exit(1);
   }
+
+  MACHINE_ID = config.MACHINE_ID;
+  API_KEY    = config.API_KEY;
+  if (config.API_BASE)     API_BASE     = config.API_BASE;
+  if (config.PRINTER_NAME) PRINTER_NAME = config.PRINTER_NAME;
+
+  console.log("✅ Machine Ready");
+  console.log("   MACHINE_ID :", MACHINE_ID);
+  console.log("   API_BASE   :", API_BASE);
+  console.log("   Platform   :", process.platform, IS_PI ? "(Raspberry Pi)" : "(Laptop/Dev)");
+  console.log("   Config     :", CONFIG_FILE);
 }
 
 /* ===============================
-   SECURITY — SIGN REQUEST
+   SECURITY
 =============================== */
 function signRequest(body) {
   const timestamp  = Date.now().toString();
@@ -343,7 +405,7 @@ async function ensurePrinter() {
     saveConfig({ PRINTER_NAME });
   } catch (err) {
     console.log("⚠️  No printer detected:", err.message);
-    console.log("🔄 Retrying in 5s...");
+    console.log("🔄 Retrying printer detection in 5s...");
     setTimeout(ensurePrinter, 5000);
   }
 }
@@ -403,9 +465,7 @@ function connectSocket() {
   });
   socket.on("payment_success", ({ jobId, machineId, filePath }) => {
     if (machineId !== MACHINE_ID) return;
-    const expiresAt = Date.now() + 5 * 60 * 1000;
-    console.log(`💳 Payment received for ${jobId} — pre-fetching...`);
-    preFetchJob(jobId, filePath, expiresAt);
+    preFetchJob(jobId, filePath, Date.now() + 5 * 60 * 1000);
   });
   socket.on("disconnect", (reason) => {
     console.log("🔌 Socket disconnected:", reason);
@@ -421,14 +481,13 @@ async function startPoller() {
   async function poll() {
     try {
       const body = {};
-      const res = await axios.get(`${API_BASE}/kiosk/pending-jobs`, {
+      const res  = await axios.get(`${API_BASE}/kiosk/pending-jobs`, {
         headers: getHeaders(body), timeout: 15000,
       });
       const { jobs } = res.data;
       if (jobs.length > 0) console.log(`🔍 Poller found ${jobs.length} pending job(s)`);
       for (const job of jobs) {
-        const expiresAt = Date.now() + 5 * 60 * 1000;
-        await preFetchJob(job.job_id, job.file_path, expiresAt);
+        await preFetchJob(job.job_id, job.file_path, Date.now() + 5 * 60 * 1000);
       }
     } catch (err) {
       console.log("🔍 Poller error:", err.response?.data?.error || err.message);
@@ -464,7 +523,8 @@ function printFile(filePath, job) {
     const sides = job.printSide === "duplex" ? "-o sides=two-sided-long-edge" : "-o sides=one-sided";
     const color = job.color === "bw" ? "-o ColorModel=Gray" : "";
     const media = job.paperSize === "A3" ? "-o media=A3" : "-o media=A4";
-    command = ["lp", `-d "${PRINTER_NAME}"`, `-n ${copies}`, sides, color, media, `"${filePath}"`].filter(Boolean).join(" ");
+    command = ["lp", `-d "${PRINTER_NAME}"`, `-n ${copies}`, sides, color, media, `"${filePath}"`]
+      .filter(Boolean).join(" ");
   }
   console.log("🖨 Print command:", command);
   return new Promise((resolve, reject) => {
@@ -479,6 +539,7 @@ function printFile(filePath, job) {
 
 /* ===============================
    HEARTBEAT
+   ✅ Auto re-registers on 401/403
 =============================== */
 function startHeartbeat() {
   async function beat() {
@@ -496,10 +557,8 @@ function startHeartbeat() {
       console.log("💓 Heartbeat sent");
     } catch (err) {
       const status = err.response?.status;
-      console.log(`❌ Heartbeat failed (HTTP ${status}):`, err.response?.data || err.message);
+      console.log(`❌ Heartbeat failed (HTTP ${status || err.code}):`, err.response?.data || err.message);
 
-      // ✅ FIX: If the server returns 403 Key mismatch during heartbeat,
-      // re-register immediately so the next cycle works.
       if (status === 403 || status === 401) {
         console.log("🔄 Auth failure during heartbeat — re-registering...");
         try {
@@ -508,9 +567,9 @@ function startHeartbeat() {
           MACHINE_ID = config.MACHINE_ID;
           API_KEY    = config.API_KEY;
           if (config.API_BASE) API_BASE = config.API_BASE;
-          console.log("✅ Re-registered successfully — heartbeat will resume next cycle");
+          console.log("✅ Re-registered — heartbeat will resume next cycle");
         } catch (regErr) {
-          console.error("❌ Re-registration during heartbeat failed:", regErr.message);
+          console.error("❌ Re-registration failed:", regErr.message);
         }
       }
     }
@@ -542,75 +601,55 @@ function parseInput(input) {
 async function handleInput(input) {
   console.log("📥 Input received:", JSON.stringify(input));
   const payload = parseInput(input);
-  if (!payload) {
-    console.log("❌ Invalid format — OTP must be 4 digits or 64-char QR token");
-    return "❌ Invalid OTP (must be 4 digits)";
-  }
-  console.log("📤 Parsed payload:", payload);
+  if (!payload) return "❌ Invalid OTP (must be 4 digits)";
 
   let localFilePath = null;
   let jobId         = null;
 
   try {
-    console.log("🔐 Sending unlock request...");
     const unlockRes = await axios.post(
       `${API_BASE}/kiosk/unlock`, payload,
       { headers: getHeaders(payload), timeout: 15000 }
     );
     const job = unlockRes.data;
     jobId = job.jobId;
-    console.log("🔓 Job unlocked:", jobId, "| Details:", JSON.stringify(job));
+    console.log("🔓 Job unlocked:", jobId);
 
     const cached = getFromCache(jobId);
     if (cached && fs.existsSync(cached)) {
       localFilePath = cached;
       console.log("⚡ Using pre-cached file:", localFilePath);
     } else {
-      console.log("⬇️  Cache miss — downloading...");
       localFilePath = await downloadFile(job.filePath, jobId);
-      console.log("✅ Downloaded to:", localFilePath);
     }
 
     if (!fs.existsSync(localFilePath))
       throw new Error(`File not found at: ${localFilePath}`);
-    console.log("📄 File ready, size:", fs.statSync(localFilePath).size, "bytes");
 
-    console.log("🖨 Starting print...");
     await printFile(localFilePath, job);
-    console.log("🖨 Print job sent successfully");
+    console.log("🖨 Print job sent");
 
     const markBody = { jobId };
     await axios.post(`${API_BASE}/kiosk/mark-printed`, markBody, {
       headers: getHeaders(markBody), timeout: 10000,
     });
-    console.log("✅ All done:", jobId);
     return "✅ Printed Successfully";
 
   } catch (err) {
-    console.error("❌ HANDLE INPUT ERROR:");
-    console.error("   HTTP status :", err.response?.status);
-    console.error("   Server msg  :", JSON.stringify(err.response?.data));
-    console.error("   Local msg   :", err.message);
-
+    console.error("❌ handleInput error:", err.response?.data || err.message);
     if (jobId) {
       try {
         const failBody = { jobId };
         await axios.post(`${API_BASE}/kiosk/mark-failed`, failBody, {
           headers: getHeaders(failBody), timeout: 10000,
         });
-        console.log("⚠️  Job marked FAILED on server");
-      } catch (markErr) {
-        console.error("❌ Could not mark job failed:", markErr.message);
-      }
+      } catch {}
     }
-
-    const msg = err.response?.data?.error || err.message || "Unknown error";
-    return `❌ ${msg}`;
-
+    return `❌ ${err.response?.data?.error || err.message || "Unknown error"}`;
   } finally {
     if (jobId) removeFromCache(jobId);
     if (localFilePath && fs.existsSync(localFilePath)) {
-      try { fs.unlinkSync(localFilePath); console.log("🗑️  Local file deleted"); } catch {}
+      try { fs.unlinkSync(localFilePath); } catch {}
     }
   }
 }
@@ -630,18 +669,17 @@ function getStatus() {
 }
 
 /* ===============================
-   MAIN LOOP  (CLI only)
+   MAIN LOOP (CLI only)
 =============================== */
 async function mainLoop() {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  function ask(q) { return new Promise((resolve) => rl.question(q, resolve)); }
+  const ask = q => new Promise(resolve => rl.question(q, resolve));
   console.log("\n📟 Ready — enter OTP or scan QR code\n");
   while (true) {
     try {
       const input = await ask("OTP / QR > ");
       if (!input.trim()) continue;
-      const result = await handleInput(input.trim());
-      console.log("→", result, "\n");
+      console.log("→", await handleInput(input.trim()), "\n");
     } catch (err) {
       console.log("❌ Loop error:", err.message);
     }
