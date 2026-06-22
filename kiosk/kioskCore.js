@@ -65,10 +65,36 @@ let fileCache    = {};
 =============================== */
 const dns = require("dns").promises;
 
-async function waitForNetwork(maxWaitMs = 60000) {
+// async function waitForNetwork(maxWaitMs = 60000) {
+//   const hostname = new URL(API_BASE).hostname;
+//   const interval = 3000;
+//   const attempts = Math.ceil(maxWaitMs / interval);
+
+//   console.log(`🌐 Waiting for network (DNS: ${hostname})...`);
+
+//   for (let i = 1; i <= attempts; i++) {
+//     try {
+//       await dns.lookup(hostname);
+//       console.log(`✅ Network ready (attempt ${i})`);
+//       return true;
+//     } catch (err) {
+//       console.log(`⏳ Network not ready yet (attempt ${i}/${attempts}): ${err.message}`);
+//       await delay(interval);
+//     }
+//   }
+
+//   console.error("❌ Network never became available — giving up after", maxWaitMs / 1000, "seconds");
+//   return false;
+// }
+
+async function waitForNetwork(maxWaitMs = 90000) {   // was 60000
   const hostname = new URL(API_BASE).hostname;
-  const interval = 3000;
+  const interval = 5000;                              // was 3000
   const attempts = Math.ceil(maxWaitMs / interval);
+
+  // ✅ FIX: Give Pi network stack time to initialize before first DNS attempt
+  console.log("⏳ Pausing 10s for network stack to initialize...");
+  await delay(10000);
 
   console.log(`🌐 Waiting for network (DNS: ${hostname})...`);
 

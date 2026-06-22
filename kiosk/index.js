@@ -83,21 +83,28 @@
 const { app, BrowserWindow } = require("electron");
 const path = require("path");
 
-// ✅ Boot kioskCore (registers machine, starts heartbeat, socket, poller)
+// ✅ Disable GPU acceleration on Raspberry Pi
+app.disableHardwareAcceleration();
+
+app.commandLine.appendSwitch("disable-gpu");
+app.commandLine.appendSwitch("disable-software-rasterizer");
+app.commandLine.appendSwitch("disable-gpu-compositing");  // ✅ add this
+app.commandLine.appendSwitch("no-sandbox"); 
+
+// ✅ Boot kioskCore
 require("./kioskCore");
 
 function createWindow() {
   const win = new BrowserWindow({
-    // Screen is physically landscape 800×480 — HTML handles its own rotation internally
-    width:      800,
-    height:     480,
+    width: 800,
+    height: 480,
     fullscreen: true,
-    kiosk:      true,
+    kiosk: true,
     webPreferences: {
-      preload:          path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
-      nodeIntegration:  false,
-      sandbox:          false,
+      nodeIntegration: false,
+      sandbox: false,
     },
   });
 
