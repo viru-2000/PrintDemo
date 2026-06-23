@@ -139,7 +139,7 @@ window.addEventListener("DOMContentLoaded", async () => {
    KEYPAD INPUT
 ========================= */
 function press(num) {
-  if (otpValue.length >= 6) return;
+  if (otpValue.length >= 4) return;
   otpValue += num;
   updateDisplay();
   resetIdleTimer();
@@ -158,8 +158,19 @@ function clearOtp() {
 }
 
 function updateDisplay() {
-  const el = document.getElementById("otp");
-  if (el) el.value = otpValue;
+  for (let i = 0; i < 4; i++) {
+    const el = document.getElementById("d" + i);
+
+    if (!el) continue;
+
+    if (i < otpValue.length) {
+      el.textContent = otpValue[i];
+      el.classList.add("filled");
+    } else {
+      el.textContent = "";
+      el.classList.remove("filled");
+    }
+  }
 }
 
 /* =========================
@@ -180,7 +191,7 @@ async function submitOtp() {
   }
 
   // Disable button during processing to prevent double-submit
-  const submitBtn = document.getElementById("submit-btn");
+  const submitBtn = document.getElementById("printBtn");
   if (submitBtn) submitBtn.disabled = true;
 
   setStatus("⏳ Processing...");
@@ -190,10 +201,11 @@ async function submitOtp() {
     console.log("📨 Result:", res);
     setStatus(res);
 
-    if (res && res.includes("Printed")) {
+    if (res && res.includes("✅")) {
       // Auto-reset after success
       setTimeout(resetScreen, 3000);
-    } else if (res && res.startsWith("❌")) {
+    } 
+    else if (res && res.startsWith("❌")) {
       // On error, allow retry after 2s
       setTimeout(() => {
         if (submitBtn) submitBtn.disabled = false;
@@ -205,6 +217,7 @@ async function submitOtp() {
     if (submitBtn) submitBtn.disabled = false;
   }
 }
+
 
 /* =========================
    STATUS
