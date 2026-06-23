@@ -48,22 +48,27 @@ const SERVER_API_BASE =process.env.API_BASE_URL || "https://printdemo-production
 initSocket(server);
 
 /* ── CORS ── */
+const allowedOrigins = [
+  "https://www.snapprints.in",
+  "https://snapprints.in",
+];
+
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    const ok =
-      origin.endsWith(".vercel.app") || 
-      // origin === "https://print-kappa-sepia.vercel.app" ||
-      // origin === "https://print-demo-p8qa.vercel.app" ||
-      origin === "print-demo-6y0pet52e-snap-print.vercel.app" ||
+
+    if (
+      allowedOrigins.includes(origin) ||
+      origin.endsWith(".vercel.app") ||
       /^http:\/\/localhost:\d+$/.test(origin) ||
-      /^http:\/\/192\.168\.\d+\.\d+:\d+$/.test(origin);
-    if (ok) return callback(null, true);
+      /^http:\/\/192\.168\.\d+\.\d+:\d+$/.test(origin)
+    ) {
+      return callback(null, true);
+    }
+
     console.warn("CORS blocked:", origin);
-    callback(new Error("Not allowed by CORS"));
+    return callback(new Error("Not allowed by CORS"));
   },
-  methods: ["GET", "POST", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "x-machine-id", "x-timestamp", "x-signature", "x-api-key"],
   credentials: true,
 }));
 
