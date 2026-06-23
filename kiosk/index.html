@@ -49,7 +49,7 @@ html, body{
 
 #stage{
   position:absolute;
-  top:100px;
+  top:48px;
   left:0;
 
   width:500px;
@@ -88,6 +88,40 @@ html, body{
 ══════════════════════════ */
 #welcome { cursor: pointer; }
 #bg { position:absolute; inset:0; width:500px; height:1000px; }
+
+#global-ticker {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 800px;
+  height: 48px;           /* bigger height */
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(0,194,255,.25);
+  background: linear-gradient(
+    90deg,
+    rgba(0,10,30,0.95),
+    rgba(0,30,60,0.95),
+    rgba(0,10,30,0.95)
+  );
+  backdrop-filter: blur(12px);
+  box-shadow: 0 2px 20px rgba(0,194,255,.15);
+}
+
+#global-ticker .ticker {
+  font-size: 0.85rem;     /* bigger text */
+  letter-spacing: 1.5px;
+  color: #00C2FF;
+  text-shadow: 0 0 10px rgba(0,194,255,.5);
+}
+
+#global-ticker .t-item span {
+  color: #007BFF;
+}
+
+
 
 .ticker-wrap{
   position:relative;
@@ -905,15 +939,18 @@ html, body{
 </style>
 </head>
 <body>
+  <div id="global-ticker">
+  <div class="ticker" id="ticker"></div>
+</div>
 <div id="stage">
 
   <!-- ══════════ WELCOME ══════════ -->
   <div id="welcome" class="screen" onclick="showOtp()">
     <canvas id="bg"></canvas>
 
-    <div class="ticker-wrap">
+    <!-- <div class="ticker-wrap">
       <div class="ticker" id="ticker"></div>
-    </div>
+    </div> -->
 
     <div class="hero">
       <div class="logo-icon">🖨</div>
