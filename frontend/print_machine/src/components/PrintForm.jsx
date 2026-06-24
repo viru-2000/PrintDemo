@@ -718,5 +718,4 @@ cardSubText: {
   color: "#B8E6FF",
 },
 };
-
 export default PrintForm;
