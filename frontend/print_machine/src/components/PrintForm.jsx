@@ -4,7 +4,7 @@ import { QRCodeCanvas } from "qrcode.react";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 // const API_BASE = "http://192.168.0.108:5000/api";
-const API_BASE = process.env.REACT_APP_API_BASE || "http://192.168.0.108:5000/api";
+const API_BASE = process.env.REACT_APP_API_BASE || "https://printdemo-production.up.railway.app/api";
 
 function PrintForm() {
 
